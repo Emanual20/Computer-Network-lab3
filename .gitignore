@@ -40,3 +40,5 @@
 *.pdb
 *.idb
 *.ilk
+.vs
+Debug

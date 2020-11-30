@@ -1,3 +1,5 @@
+//Author: Emanual20
+//Date: 29/11/2020
 #include<iostream>
 #include<ctime>
 #include<WinSock2.h>
@@ -14,6 +16,9 @@ const int BUFFER_SIZE = 1024;
 char SERVER_IP[] = "192.168.43.180";
 int SERVER_PORT = 30000;
 
+char CLIENT_IP[] = "192.168.43.180";
+int CLIENT_PORT = 1425;
+
 sockaddr_in serveraddr, clientaddr;
 
 int len_sockaddrin = sizeof(sockaddr_in);
@@ -29,22 +34,24 @@ int main() {
 	}
 	else cout << "load socket libs successfully.." << endl;
 
+	// create a datagram socket
 	SOCKET ser_socket = socket(AF_INET, SOCK_DGRAM, 0);
 	if (ser_socket == INVALID_SOCKET) {
 		cout << "failed to create a new server socket.." << endl;
 	}
 	else cout << "create a new server socket successfully.." << endl;
 
+	// bind serveraddr to the datagram socket
 	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_addr.s_addr = inet_addr(SERVER_IP);//转换成二进制字节流
 	serveraddr.sin_port = htons(SERVER_PORT); // 16位TCP端口号
-
 	bind(ser_socket, (sockaddr*)&serveraddr, sizeof(sockaddr));
 
 	clientaddr.sin_family = AF_INET;
-	clientaddr.sin_addr.s_addr = inet_addr(SERVER_IP);//转换成二进制字节流
-	clientaddr.sin_port = htons(SERVER_PORT); // 16位TCP端口号
+	clientaddr.sin_addr.s_addr = inet_addr(CLIENT_IP);//转换成二进制字节流
+	clientaddr.sin_port = htons(CLIENT_PORT); // 16位TCP端口号
 
+	// recvfrom & sendto
 	while (1) {
 		recvfrom(ser_socket, recvBuffer, sizeof(recvBuffer), 0, (sockaddr*)&clientaddr, &len_sockaddrin);
 		cout << recvBuffer << endl;

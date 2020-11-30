@@ -14,6 +14,9 @@ const int BUFFER_SIZE = 1024;
 char SERVER_IP[] = "192.168.43.180";
 int SERVER_PORT = 30000;
 
+char CLIENT_IP[] = "192.168.43.180";
+int CLIENT_PORT = 1425;
+
 sockaddr_in serveraddr, clientaddr;
 
 int len_sockaddrin = sizeof(sockaddr_in);
@@ -29,23 +32,24 @@ int main() {
 	}
 	else cout << "load socket libs successfully.." << endl;
 
+	// create a datagram socket
 	SOCKET cli_socket = socket(AF_INET, SOCK_DGRAM, 0);
 	if (cli_socket == INVALID_SOCKET) {
 		cout << "failed to create a new client socket.." << endl;
 	}
 	else cout << "create a new client socket successfully.." << endl;
 
+	// bind serveraddr to the datagram socket
 	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_addr.s_addr = inet_addr(SERVER_IP);//转换成二进制字节流
 	serveraddr.sin_port = htons(SERVER_PORT); // 16位TCP端口号
 
-	//bind(ser_socket, (sockaddr*)&serveraddr, sizeof(sockaddr));
-
 	clientaddr.sin_family = AF_INET;
-	clientaddr.sin_addr.s_addr = inet_addr(SERVER_IP);//转换成二进制字节流
-	clientaddr.sin_port = htons(SERVER_PORT); // 16位TCP端口号
-	bind(cli_socket, (sockaddr*)&serveraddr, sizeof(sockaddr));
+	clientaddr.sin_addr.s_addr = inet_addr(CLIENT_IP);//转换成二进制字节流
+	clientaddr.sin_port = htons(CLIENT_PORT); // 16位TCP端口号
+	bind(cli_socket, (sockaddr*)&clientaddr, sizeof(sockaddr));
 
+	// recvfrom & sendto
 	while (1) {
 		strcpy(sendBuffer, "hello world!");
 		sendto(cli_socket, sendBuffer, sizeof(sendBuffer), 0, (sockaddr*)&serveraddr, len_sockaddrin);
