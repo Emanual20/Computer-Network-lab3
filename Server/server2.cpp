@@ -1,4 +1,4 @@
-//Author: Emanual20
+﻿//Author: Emanual20
 //Date: 29/11/2020
 #include<iostream>
 #include<fstream>
@@ -98,21 +98,38 @@ int fill_flength(int fl) {
 	return 0;
 }
 
-int read_flength() {
+int read_fitemlength() {
 	int ret = 0;
-	ret += (unsigned int)recvBuffer[12] * 256;
+	ret += ((unsigned int)recvBuffer[4]) * 256;
+	ret += (unsigned int)recvBuffer[5];
+	return ret;
+}
+
+int read_fpathlength() {
+	int ret = 0;
+	ret += ((unsigned int)recvBuffer[12]) * 256;
 	ret += (unsigned int)recvBuffer[13];
 	return ret;
 }
 
+int read_filebit() {
+	return recvBuffer[15] & 0x1;
+}
+
 void anal_datagram() {
-	int flength = read_flength();
-	if (flength > 0) {
-		string file_name = "";
-		for (int i = 0; i < flength; i++) {
-			file_name += recvBuffer[UDP_HEAD_SIZE + i];
+	if (read_filebit()) {
+		int flength = read_fpathlength();
+		if (flength > 0) {
+			string file_name = "";
+			for (int i = 0; i < flength; i++) {
+				file_name += recvBuffer[UDP_HEAD_SIZE + i];
+			}
+			fout.open(file_name, ios_base::out | ios_base::app | ios_base::binary);
 		}
-		fout.open(file_name, ios_base::out | ios_base::app | ios_base::binary);
+
+		int fitemlength = read_fitemlength();
+		// write file to disk
+		fout.write(&recvBuffer[UDP_HEAD_SIZE + flength], fitemlength);
 	}
 }
 
@@ -148,12 +165,10 @@ int main() {
 	clientaddr.sin_port = htons(CLIENT_PORT);
 
 	// recvfrom & sendto
-	ofstream fout("virus.txt", ios_base::app | ios_base::out | ios_base::binary);
 	int tot = 0;
 	while (1) {
 		recvfrom(ser_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&clientaddr, &len_sockaddrin);
-		cout << recvBuffer << endl;
-		fout << recvBuffer;
+		anal_datagram();
 		_itoa(tot++, sendBuffer, 10);
 		sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
 	}

@@ -97,6 +97,10 @@ int fill_flength(int fl) {
 	return 0;
 }
 
+void fill_filebit() {
+	sendBuffer[15] &= 0x1;
+}
+
 // call all sub-fill func() to fill_udphead
 void fill_udphead(int sz) {
 	fill_fmtoports();
