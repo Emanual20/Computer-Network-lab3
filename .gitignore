@@ -30,3 +30,13 @@
 *.exe
 *.out
 *.app
+
+# vs dependency
+*.vcxproj
+*.vcxproj.*
+*.sln
+*.log
+*.obj
+*.pdb
+*.idb
+*.ilk
