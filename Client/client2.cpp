@@ -37,6 +37,9 @@ char sendBuffer[BUFFER_SIZE], recvBuffer[BUFFER_SIZE];
 int SEND_LEN = sizeof(sendBuffer);
 int RECV_LEN = sizeof(recvBuffer);
 
+// sent seq for rdt2.1
+u_short sent_seq = 0;
+
 void mydebug() {
 	fdebug.write(sendBuffer, BUFFER_SIZE);
 }
@@ -91,6 +94,28 @@ int fill_cksum(int count) {
 	return 0;
 }
 
+void clear_sentseq() {
+	sent_seq = 0;
+}
+
+// sent_seq++
+void plus_sentseq() {
+	sent_seq++;
+	sent_seq &= 0xffff;
+}
+
+// fill the sent-seq for rdt2.1
+int fill_seq() {
+	if (sent_seq > 0xffff) {
+		return 1;
+	}
+
+	sendBuffer[8] = (char)((sent_seq >> 8) & 0xff);
+	sendBuffer[9] = (char)(sent_seq & 0xff);
+
+	return 0;
+}
+
 // fill the sendBuffer file_length;
 int fill_flength(int fl) {
 	// if fl > 0xffffffff, there must be something wrong
@@ -126,6 +151,32 @@ void fill_udphead(int sz) {
 	if (fill_cksum(sz)) {
 		cout << "error in fill_udphead's fill_cksum..!" << endl;
 	}
+	if (fill_seq()) {
+		cout << "error in fill_udphead's fill_seq..!" << endl;
+	}
+}
+
+int read_fitemlength() {
+	int ret = 0;
+	ret += (((unsigned short)recvBuffer[4]) % 0x100) * 256;
+	ret += ((unsigned short)recvBuffer[5] % 0x100);
+	return ret;
+}
+
+// via the checksum of recvBuffer to check if the datagram is corrupted
+bool is_corrupt() {
+	int l = read_fitemlength();
+	u_short now_cksum = cksum((u_short*)&sendBuffer[0], l / 2);
+	cout << now_cksum << endl;
+	return now_cksum != 0xffff;
+}
+
+// note: unsigned short must % 0x100
+u_short read_checksum() {
+	u_short ret = 0;
+	ret += (((unsigned short)recvBuffer[6]) % 0x100) * 256;
+	ret += ((unsigned short)recvBuffer[7] % 0x100);
+	return ret;
 }
 
 int read_nakbit() {
@@ -185,6 +236,8 @@ int main() {
 			
 			// miss fill_udphead
 			sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
+			memset(sendBuffer, 0, sizeof(sendBuffer));
+
 			recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
 			cout << recvBuffer << endl;
 		}
@@ -211,6 +264,7 @@ int main() {
 				reserved_size = UDP_DATA_SIZE;
 				this_written_size = 0;
 
+				// if it's the first piece, it shall send the file's name
 				if (file_length > 0) {
 					fill_flength(file_length);
 					reserved_size -= file_length;
@@ -245,17 +299,33 @@ int main() {
 
 				recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
 
-				if (i == send_times - 1) clear_fileendbit();
-
-				if (read_ackbit()) {
-					cout << "get ack.." << endl;
+				// if receive ack and not corrupted
+				if (read_ackbit() && !is_corrupt()) {
+					cout << "get ack and not corrupted..!" << endl;
+					// for rdt2.1
+					plus_sentseq();
+					if (i == send_times - 1) {
+						clear_fileendbit();
+						clear_sentseq();
+					}
 					continue;
 				}
+
+				// if receive nak
 				if (read_nakbit()) {
 					cout << "get nak.. wtf for debug..!" << endl;
-					Sleep(5000);
+					Sleep(3000);
 					i--;
 					tot_read_size -= sendsize;
+					continue;
+				}
+				// else if recieved ack is corrupted
+				else if (is_corrupt()) {
+					cout << "get ack.. but corrupted..!" << endl;
+					Sleep(3000);
+					i--;
+					tot_read_size -= sendsize;
+					if (i == 0) file_length = file_path.length();
 					continue;
 				}
 			}

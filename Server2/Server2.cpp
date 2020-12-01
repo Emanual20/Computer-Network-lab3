@@ -35,6 +35,9 @@ int len_recv, len_send;
 char sendBuffer[BUFFER_SIZE], recvBuffer[BUFFER_SIZE];
 int SEND_LEN = sizeof(sendBuffer);
 int RECV_LEN = sizeof(recvBuffer);
+
+// expected seq for rdt2.1
+u_short expect_seq = 0;
 ofstream fout;
 
 void mydebug() {
@@ -88,6 +91,16 @@ int fill_cksum(int count) {
 	sendBuffer[6] = (char)((x >> 8) % 0x100);
 	sendBuffer[7] = (char)(x % 0x100);
 	return 0;
+}
+
+void clear_expectseq() {
+	expect_seq = 0;
+}
+
+// expect_seq++
+void plus_expectseq() {
+	expect_seq++;
+	expect_seq &= 0xffff;
 }
 
 // fill the sendBuffer file_length;
@@ -154,6 +167,19 @@ u_short read_checksum() {
 	return ret;
 }
 
+// note: unsigned short must % 0x100
+u_short read_seq() {
+	u_short ret = 0;
+	ret += (((unsigned short)recvBuffer[8]) % 0x100) * 256;
+	ret += ((unsigned short)recvBuffer[9] % 0x100);
+	return ret;
+}
+
+// via read_seq to judge if is_seq
+bool is_seq() {
+	return expect_seq == read_seq();
+}
+
 int read_fpathlength() {
 	int ret = 0;
 	ret += ((unsigned int)recvBuffer[12]) * 256;
@@ -191,6 +217,7 @@ void anal_datagram() {
 		
 		if (read_fileendbit()) {
 			fout.close();
+			clear_expectseq();
 		}
 	}
 }
@@ -243,14 +270,21 @@ int main() {
 			recvfrom(ser_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&clientaddr, &len_sockaddrin);
 			IsCorrupted = is_corrupt();
 		}
-		
-		anal_datagram();
+
 		// send a ACK datagram (has not finish)
-		_itoa((unsigned short)tot++, &sendBuffer[8], 10);
 		fill_ackbit();
 		fill_udphead(UDP_HEAD_SIZE);
 		sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
 		memset(sendBuffer, 0, sizeof(sendBuffer));
+
+		// if the seq not fits
+		if (!is_seq()) {
+			continue;
+		}
+		
+		// if the seq fits, analyze the datagram
+		plus_expectseq();
+		anal_datagram();
 	}
 
 	closesocket(ser_socket);
