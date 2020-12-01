@@ -54,7 +54,7 @@ int fill_length(int length) {
 		return 1;
 	}
 	sendBuffer[4] = (char)((length >> 8) % 0x100);
-	sendBuffer[5] = (char)(length % 0x100);
+	sendBuffer[5] = (char)((length & 0xff) % 0x100);
 	return 0;
 }
 
@@ -97,8 +97,16 @@ int fill_flength(int fl) {
 	return 0;
 }
 
+void clear_fileendbit() {
+	sendBuffer[15] &= 0xfd;
+}
+
+void fill_fileendbit() {
+	sendBuffer[15] |= 0x2;
+}
+
 void fill_filebit() {
-	sendBuffer[15] &= 0x1;
+	sendBuffer[15] |= 0x1;
 }
 
 // call all sub-fill func() to fill_udphead
@@ -110,6 +118,10 @@ void fill_udphead(int sz) {
 	if (fill_cksum(sz)) {
 		cout << "error in fill_udphead's fill_cksum..!" << endl;
 	}
+}
+
+int read_filebit() {
+	return recvBuffer[15] & 0x1;
 }
 
 int main() {
@@ -186,6 +198,7 @@ int main() {
 				if (file_length > 0) {
 					fill_flength(file_length);
 					reserved_size -= file_length;
+					this_written_size += file_length;
 					// write file name into datagram
 					for (int j = 0; j < file_length; j++) {
 						sendBuffer[UDP_HEAD_SIZE + j] = file_path[j];
@@ -196,7 +209,6 @@ int main() {
 					fill_flength(0);
 				}
 
-
 				fin.seekg(tot_read_size, ios::beg);
 				
 				// determine optimal file size to send
@@ -205,13 +217,19 @@ int main() {
 				// read from file
 				fin.read(&sendBuffer[UDP_HEAD_SIZE + (UDP_DATA_SIZE - reserved_size)], sendsize);
 				tot_read_size += sendsize;
+				this_written_size += sendsize;
 
 				// fill the udphead
-				fill_udphead(UDP_HEAD_SIZE + sendsize);
+				fill_udphead(UDP_HEAD_SIZE + this_written_size);
 
+				if (i == send_times - 1) fill_fileendbit();
+				fill_filebit();
+				cout << (sendBuffer[15] & 0x1) << endl;
 				sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 				recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
 				cout << recvBuffer << endl;
+
+				if (i == send_times - 1) clear_fileendbit();
 			}
 			fin.close();
 		}

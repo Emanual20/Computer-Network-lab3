@@ -100,8 +100,8 @@ int fill_flength(int fl) {
 
 int read_fitemlength() {
 	int ret = 0;
-	ret += ((unsigned int)recvBuffer[4]) * 256;
-	ret += (unsigned int)recvBuffer[5];
+	ret += (((unsigned short)recvBuffer[4]) % 0x100) * 256;
+	ret += ((unsigned short)recvBuffer[5] % 0x100);
 	return ret;
 }
 
@@ -112,11 +112,16 @@ int read_fpathlength() {
 	return ret;
 }
 
+int read_fileendbit() {
+	return recvBuffer[15] & 0x2;
+}
+
 int read_filebit() {
 	return recvBuffer[15] & 0x1;
 }
 
 void anal_datagram() {
+	cout << read_filebit() << endl;
 	if (read_filebit()) {
 		int flength = read_fpathlength();
 		if (flength > 0) {
@@ -124,12 +129,19 @@ void anal_datagram() {
 			for (int i = 0; i < flength; i++) {
 				file_name += recvBuffer[UDP_HEAD_SIZE + i];
 			}
+			cout << file_name << endl;
 			fout.open(file_name, ios_base::out | ios_base::app | ios_base::binary);
 		}
 
 		int fitemlength = read_fitemlength();
+		cout << fitemlength << endl;
+		fitemlength -= (flength + UDP_HEAD_SIZE);
 		// write file to disk
 		fout.write(&recvBuffer[UDP_HEAD_SIZE + flength], fitemlength);
+		
+		if (read_fileendbit()) {
+			fout.close();
+		}
 	}
 }
 
