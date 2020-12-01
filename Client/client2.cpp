@@ -4,6 +4,7 @@
 #include<fstream>
 #include<ctime>
 #include<WinSock2.h>
+#include<windows.h>
 #include<string.h>
 #include<cstring>
 #include<string>
@@ -13,9 +14,11 @@
 #pragma comment(lib, "ws2_32.lib")
 using namespace std;
 
+ofstream fdebug("debug.txt");
+
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
-const int BUFFER_SIZE = 0x7fff;
-int UDP_MAXSIZE = 0x7fff; // udp max size = 65535 byte
+const int BUFFER_SIZE = 0x8000;
+int UDP_MAXSIZE = 0x8000; // udp max size = 32768 byte
 int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
 
@@ -33,6 +36,10 @@ int len_recv, len_send;
 char sendBuffer[BUFFER_SIZE], recvBuffer[BUFFER_SIZE];
 int SEND_LEN = sizeof(sendBuffer);
 int RECV_LEN = sizeof(recvBuffer);
+
+void mydebug() {
+	fdebug.write(sendBuffer, BUFFER_SIZE);
+}
 
 // fill the port bits with global var 'SERVER_PORT' & 'CLIENT_PORT'
 void fill_fmtoports() {
@@ -77,6 +84,7 @@ int fill_cksum(int count) {
 	if (count < 0) {
 		return 1;
 	}
+	sendBuffer[6] = sendBuffer[7] = 0; // clear checksum bits
 	u_short x = cksum((u_short*)&sendBuffer[0], count);
 	sendBuffer[6] = (char)((x >> 8) % 0x100);
 	sendBuffer[7] = (char)(x % 0x100);
@@ -120,6 +128,14 @@ void fill_udphead(int sz) {
 	}
 }
 
+int read_nakbit() {
+	return recvBuffer[15] & 0x8;
+}
+
+int read_ackbit() {
+	return recvBuffer[15] & 0x4;
+}
+
 int read_filebit() {
 	return recvBuffer[15] & 0x1;
 }
@@ -158,9 +174,9 @@ int main() {
 	// recvfrom & sendto
 	string option;
 	while (1) {
-		cout << "PLEASE INPUT YOUR OPTION:" << endl;
+		cout << endl << "PLEASE INPUT YOUR OPTION:" << endl;
 		cout << "text;<text info>  file;<file path>  exit;" << endl;
-		cout << "for example, text;hello ,  file;1.jpg " << endl;
+		cout << "for example, text;hello ,  file;1.jpg " << endl << endl;
 
 		cin >> option;
 		if (option.substr(0, 4) == "text") {
@@ -224,12 +240,24 @@ int main() {
 
 				if (i == send_times - 1) fill_fileendbit();
 				fill_filebit();
-				cout << (sendBuffer[15] & 0x1) << endl;
 				sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
+				memset(sendBuffer, 0, sizeof(sendBuffer));
+
 				recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
-				cout << recvBuffer << endl;
 
 				if (i == send_times - 1) clear_fileendbit();
+
+				if (read_ackbit()) {
+					cout << "get ack.." << endl;
+					continue;
+				}
+				if (read_nakbit()) {
+					cout << "get nak.. wtf for debug..!" << endl;
+					Sleep(5000);
+					i--;
+					tot_read_size -= sendsize;
+					continue;
+				}
 			}
 			fin.close();
 		}

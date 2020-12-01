@@ -13,9 +13,11 @@
 #pragma comment(lib, "ws2_32.lib")
 using namespace std;
 
+ofstream fdebug("debug.txt");
+
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
-const int BUFFER_SIZE = 0x7fff;
-int UDP_MAXSIZE = 0x7fff; // udp max size = 65535 byte
+const int BUFFER_SIZE = 0x8000;
+int UDP_MAXSIZE = 0x8000; // udp max size = 32768 byte
 int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
 
@@ -34,6 +36,10 @@ char sendBuffer[BUFFER_SIZE], recvBuffer[BUFFER_SIZE];
 int SEND_LEN = sizeof(sendBuffer);
 int RECV_LEN = sizeof(recvBuffer);
 ofstream fout;
+
+void mydebug() {
+	fdebug.write(recvBuffer, BUFFER_SIZE);
+}
 
 // fill the port bits with global var 'SERVER_PORT' & 'CLIENT_PORT'
 void fill_fmtoports() {
@@ -98,10 +104,53 @@ int fill_flength(int fl) {
 	return 0;
 }
 
+void clear_nakbit() {
+	sendBuffer[15] &= 0xf7;
+}
+
+void fill_nakbit() {
+	sendBuffer[15] |= 0x8;
+}
+
+void clear_ackbit() {
+	sendBuffer[15] &= 0xfb;
+}
+
+void fill_ackbit() {
+	sendBuffer[15] |= 0x4;
+}
+
+// call all sub-fill func() to fill_udphead
+void fill_udphead(int sz) {
+	fill_fmtoports();
+	if (fill_length(sz)) {
+		cout << "error in fill_udphead's fill_length..!" << endl;
+	}
+	if (fill_cksum(sz)) {
+		cout << "error in fill_udphead's fill_cksum..!" << endl;
+	}
+}
+
 int read_fitemlength() {
 	int ret = 0;
 	ret += (((unsigned short)recvBuffer[4]) % 0x100) * 256;
 	ret += ((unsigned short)recvBuffer[5] % 0x100);
+	return ret;
+}
+
+// via the checksum of recvBuffer to check if the datagram is corrupted
+bool is_corrupt() {
+	int l = read_fitemlength();
+	u_short now_cksum = cksum((u_short*)&sendBuffer[0], l / 2);
+	cout << now_cksum << endl;
+	return now_cksum != 0xffff;
+}
+
+// note: unsigned short must % 0x100
+u_short read_checksum() {
+	u_short ret = 0;
+	ret += (((unsigned short)recvBuffer[6]) % 0x100) * 256;
+	ret += ((unsigned short)recvBuffer[7] % 0x100);
 	return ret;
 }
 
@@ -120,8 +169,9 @@ int read_filebit() {
 	return recvBuffer[15] & 0x1;
 }
 
+// to analyze the datagram
 void anal_datagram() {
-	cout << read_filebit() << endl;
+	// if the datagram's type is a file
 	if (read_filebit()) {
 		int flength = read_fpathlength();
 		if (flength > 0) {
@@ -129,12 +179,12 @@ void anal_datagram() {
 			for (int i = 0; i < flength; i++) {
 				file_name += recvBuffer[UDP_HEAD_SIZE + i];
 			}
-			cout << file_name << endl;
+			cout << "stated receiving " << file_name << "..!" << endl;
 			fout.open(file_name, ios_base::out | ios_base::app | ios_base::binary);
 		}
 
 		int fitemlength = read_fitemlength();
-		cout << fitemlength << endl;
+		//cout << fitemlength << endl;
 		fitemlength -= (flength + UDP_HEAD_SIZE);
 		// write file to disk
 		fout.write(&recvBuffer[UDP_HEAD_SIZE + flength], fitemlength);
@@ -180,9 +230,27 @@ int main() {
 	int tot = 0;
 	while (1) {
 		recvfrom(ser_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&clientaddr, &len_sockaddrin);
+
+		bool IsCorrupted = is_corrupt();
+		while (IsCorrupted) {
+			// send a NAK datagram
+			fill_nakbit();
+			fill_udphead(UDP_HEAD_SIZE);
+			sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
+			memset(sendBuffer, 0, sizeof(sendBuffer));
+
+			// recieve a retransmission(maybe redundant) datagram
+			recvfrom(ser_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&clientaddr, &len_sockaddrin);
+			IsCorrupted = is_corrupt();
+		}
+		
 		anal_datagram();
-		_itoa(tot++, sendBuffer, 10);
+		// send a ACK datagram (has not finish)
+		_itoa((unsigned short)tot++, &sendBuffer[8], 10);
+		fill_ackbit();
+		fill_udphead(UDP_HEAD_SIZE);
 		sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
+		memset(sendBuffer, 0, sizeof(sendBuffer));
 	}
 
 	closesocket(ser_socket);
