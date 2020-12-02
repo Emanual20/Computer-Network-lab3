@@ -17,9 +17,11 @@ ofstream fdebug("debug.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
 const int BUFFER_SIZE = 0x8000;
-int UDP_MAXSIZE = 0x8000; // udp max size = 32768 byte
-int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
+const int UDP_MAXSIZE = 0x8000; // udp max size = 32768 byte
+const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
+const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
+const int MAX_SEQ = 2; // the valid seq shall keep in
 
 // server ip and port number
 char SERVER_IP[] = "192.168.43.180";
@@ -39,6 +41,9 @@ int RECV_LEN = sizeof(recvBuffer);
 // expected seq for rdt2.1
 u_short expect_seq = 0;
 ofstream fout;
+
+// timer for rdt3.0
+time_t t_start, t_end;
 
 void mydebug() {
 	fdebug.write(recvBuffer, BUFFER_SIZE);
@@ -100,7 +105,7 @@ void clear_expectseq() {
 // expect_seq++
 void plus_expectseq() {
 	expect_seq++;
-	expect_seq &= 0xffff;
+	expect_seq %= MAX_SEQ;
 }
 
 // fill the sendBuffer file_length;

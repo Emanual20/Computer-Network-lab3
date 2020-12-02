@@ -18,9 +18,11 @@ ofstream fdebug("debug.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
 const int BUFFER_SIZE = 0x8000;
-int UDP_MAXSIZE = 0x8000; // udp max size = 32768 byte
-int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
+const int UDP_MAXSIZE = 0x8000; // udp max size = 32768 byte
+const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
+const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
+const int MAX_SEQ = 2; // the valid seq shall keep in
 
 // server ip and port number
 char SERVER_IP[] = "192.168.43.180";
@@ -39,6 +41,10 @@ int RECV_LEN = sizeof(recvBuffer);
 
 // sent seq for rdt2.1
 u_short sent_seq = 0;
+
+// timer for rdt3.0
+time_t t_start, t_end;
+struct timeval timeout;
 
 void mydebug() {
 	fdebug.write(sendBuffer, BUFFER_SIZE);
@@ -101,7 +107,7 @@ void clear_sentseq() {
 // sent_seq++
 void plus_sentseq() {
 	sent_seq++;
-	sent_seq &= 0xffff;
+	sent_seq %= MAX_SEQ;
 }
 
 // fill the sent-seq for rdt2.1
@@ -192,6 +198,13 @@ int read_filebit() {
 }
 
 int main() {
+	// set the timer's RTO for rdt3.0
+	cout << "please input the timer's RTO (the unit is ms):" << endl;
+	int x;
+	cin >> x;
+	timeout.tv_sec = x / 1000;
+	timeout.tv_usec = x % 1000;
+
 	// load libs
 	WORD wVersionRequested = MAKEWORD(2, 0);
 	WSADATA wsaData;
@@ -206,6 +219,12 @@ int main() {
 		cout << "failed to create a new client socket.." << endl;
 	}
 	else cout << "create a new client socket successfully.." << endl;
+
+	// set socket RTO for rdt3.0
+	if (setsockopt(cli_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == -1) {
+		cout << "set RTO failed..!" << endl;
+	}
+	else cout << "set RTO successfully..!" << endl;
 
 	// bind serveraddr to the datagram socket
 	serveraddr.sin_family = AF_INET;
@@ -297,7 +316,25 @@ int main() {
 				sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 				memset(sendBuffer, 0, sizeof(sendBuffer));
 
-				recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
+				// receive the server's ack/nak/seq
+				// if recvfrom returns 0, it receives a empty datagram
+				// if recvfrom returns negative, it receives nothing over RTO, time is up!
+				if (recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin) <= 0) {
+					int errorcode = WSAGetLastError();
+					// no response over RTO
+					if (errorcode == 10060) {
+						cout << "over RTO..need retransmission last datagram..!" << endl;
+						i--;
+						tot_read_size -= sendsize;
+						if (i == 0) file_length = file_path.length();
+						continue;
+					}
+					else {
+						cout << "wtf in recvfrom, unknown error..! client will shut down..!" << endl;
+						return 0;
+					}
+				}
+
 
 				// if receive ack and not corrupted
 				if (read_ackbit() && !is_corrupt()) {
@@ -317,6 +354,7 @@ int main() {
 					Sleep(3000);
 					i--;
 					tot_read_size -= sendsize;
+					if (i == 0) file_length = file_path.length();
 					continue;
 				}
 				// else if recieved ack is corrupted
