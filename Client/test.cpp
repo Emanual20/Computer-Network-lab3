@@ -3,25 +3,18 @@
 #include<ctime>
 #include<time.h>
 #include<Windows.h>
+#include<string>
 using namespace std;
 ifstream fin;
+
+char buffer[] = "hello";
+
 int main() {
-	time_t start_t, end_t;
-	double diff_t;
-
-	//string option;
-	//while (cin >> option) {
-	//	fin.open(option, ios::binary | ios::app);
-	//	fin.seekg(0, ios::end);
-	//	cout << option << " 's length is: " << fin.tellg() << endl;
-	//	fin.close();
-	//}
-
-	time(&start_t);
-	Sleep(5000);
-	time(&end_t);
-	diff_t = difftime(end_t, start_t);
-	cout << start_t << " " << end_t << " " << diff_t << endl;
+	
+	string s = buffer;
+	cout << s << endl;
+	strcpy(buffer,"what");
+	cout << s << endl;
 
 	return 0;
 }
