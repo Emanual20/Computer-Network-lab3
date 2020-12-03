@@ -136,6 +136,14 @@ int fill_flength(int fl) {
 	return 0;
 }
 
+void clear_synbit(){
+	sendBuffer[15] &= 0xef;
+}
+
+void fill_synbit() {
+	sendBuffer[15] |= 0x10;
+}
+
 void clear_fileendbit() {
 	sendBuffer[15] &= 0xfd;
 }
@@ -274,6 +282,29 @@ int main() {
 				continue;
 			}
 
+			// send a syn datagram to build connection..
+			fill_udphead(UDP_HEAD_SIZE);
+			fill_synbit();
+			sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
+			memset(sendBuffer, 0, sizeof(sendBuffer));
+
+			if (int it = recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin) <= 0) {
+				if (it == 0) {
+					cout << "we receive an empty ack..?!" << endl;
+				}
+				int errorcode = WSAGetLastError();
+				if (errorcode == 10060) {
+					cout << "over RTO, server didn't respond us.. transmission corrupt..!" << endl;
+					continue;
+				}
+			}
+			else {
+				if (read_ackbit()) {
+					cout << "build connection successful..! we will begin to send your file..!" << endl;
+				}
+			}
+
+			// begin to send files
 			int send_times = ceil((len * 1.0) / UDP_DATA_SIZE);
 			cout << "for this file, we will send " << send_times << " times..!" << endl;
 

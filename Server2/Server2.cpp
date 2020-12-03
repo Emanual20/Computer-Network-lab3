@@ -192,6 +192,10 @@ int read_fpathlength() {
 	return ret;
 }
 
+int read_synbit() {
+	return recvBuffer[15] & 0x10;
+}
+
 int read_fileendbit() {
 	return recvBuffer[15] & 0x2;
 }
@@ -282,8 +286,15 @@ int main() {
 		sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
 		memset(sendBuffer, 0, sizeof(sendBuffer));
 
+		// if the datagram is a syn
+		if (read_synbit()) {
+			cout << "retrieve a syn datagram to request connection..!" << endl;
+			continue;
+		}
+
 		// if the seq not fits
 		if (!is_seq()) {
+			cout << "the sequence not fit..!" << endl;
 			continue;
 		}
 		
