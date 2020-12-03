@@ -28,6 +28,7 @@ char SERVER_IP[] = "192.168.43.180";
 int SERVER_PORT = 30000;
 char CLIENT_IP[] = "192.168.43.180";
 int CLIENT_PORT = 1425;
+char reserved_IP[] = "127.0.0.1";
 
 sockaddr_in serveraddr, clientaddr;
 
@@ -45,8 +46,28 @@ ofstream fout;
 // timer for rdt3.0
 time_t t_start, t_end;
 
+// for debug
 void mydebug() {
 	fdebug.write(recvBuffer, BUFFER_SIZE);
+}
+
+// to judge whether a ip user entered is valid 
+bool is_ipvalid(string ip) {
+	int l = ip.length();
+	int res = 0, dot_cnt = 0;
+	for (int i = 0; i < l; i++) {
+		if (isdigit(ip[i])) {
+			res *= 10;
+			res += (ip[i] - '0');
+		}
+		else if (ip[i] == '.') {
+			dot_cnt++;
+			if (!(0 <= res && res <= 255)) return false;
+		}
+		else return false;
+	}
+	if (!(0 <= res && res <= 255)) return false;
+	return dot_cnt == 3;
 }
 
 // fill the port bits with global var 'SERVER_PORT' & 'CLIENT_PORT'
@@ -232,6 +253,30 @@ void anal_datagram() {
 }
 
 int main() {
+	// SET SERVER_IP & CLIENT_IP
+	string sip, cip;
+	cout << "please input your server IP, notvalid IP or input 0 will be set as 127.0.0.1 !" << endl;
+	cin >> sip;
+	if (is_ipvalid(sip)) {
+		cout << "server ip is set as: " << sip << endl;
+		strcpy(SERVER_IP, sip.c_str());
+	}
+	else {
+		cout << "server ip is set as: " << reserved_IP << endl;
+		strcpy(SERVER_IP, reserved_IP);
+	}
+
+	cout << "please input your client IP, notvalid IP or input 0 will be set as 127.0.0.1 !" << endl;
+	cin >> cip;
+	if (is_ipvalid(cip)) {
+		cout << "client ip is set as: " << cip << endl;
+		strcpy(CLIENT_IP, cip.c_str());
+	}
+	else {
+		cout << "client ip is set as: " << reserved_IP << endl;
+		strcpy(CLIENT_IP, reserved_IP);
+	}
+
 	// load libs
 	WORD wVersionRequested = MAKEWORD(2, 0);
 	WSADATA wsaData;
