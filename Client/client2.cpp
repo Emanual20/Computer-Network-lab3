@@ -199,11 +199,12 @@ int read_filebit() {
 
 int main() {
 	// set the timer's RTO for rdt3.0
+	// note: the timeval type used in setsocketopt will be read as milliseconds
 	cout << "please input the timer's RTO (the unit is ms):" << endl;
 	int x;
 	cin >> x;
-	timeout.tv_sec = x / 1000;
-	timeout.tv_usec = x % 1000;
+	timeout.tv_sec = x;
+	timeout.tv_usec = 0;
 
 	// load libs
 	WORD wVersionRequested = MAKEWORD(2, 0);
@@ -319,14 +320,17 @@ int main() {
 				// receive the server's ack/nak/seq
 				// if recvfrom returns 0, it receives a empty datagram
 				// if recvfrom returns negative, it receives nothing over RTO, time is up!
-				if (recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin) <= 0) {
+				if (int it = recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin) <= 0) {
+					if (it == 0) {
+						cout << "it receive a empty datagram..?" << endl;
+					}
 					int errorcode = WSAGetLastError();
 					// no response over RTO
 					if (errorcode == 10060) {
 						cout << "over RTO..need retransmission last datagram..!" << endl;
 						i--;
 						tot_read_size -= sendsize;
-						if (i == 0) file_length = file_path.length();
+						if (i == -1) file_length = file_path.length();
 						continue;
 					}
 					else {
@@ -354,7 +358,7 @@ int main() {
 					Sleep(3000);
 					i--;
 					tot_read_size -= sendsize;
-					if (i == 0) file_length = file_path.length();
+					if (i == -1) file_length = file_path.length();
 					continue;
 				}
 				// else if recieved ack is corrupted
@@ -363,7 +367,7 @@ int main() {
 					Sleep(3000);
 					i--;
 					tot_read_size -= sendsize;
-					if (i == 0) file_length = file_path.length();
+					if (i == -1) file_length = file_path.length();
 					continue;
 				}
 			}
