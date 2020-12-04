@@ -227,7 +227,6 @@ void anal_datagram() {
 	// if the datagram's type is a file
 	if (read_filebit()) {
 		int flength = read_fpathlength();
-		cout << read_seq() << " " << flength << endl;
 		if (flength > 0) {
 			string file_name = "";
 			for (int i = 0; i < flength; i++) {
@@ -238,14 +237,13 @@ void anal_datagram() {
 		}
 
 		int fitemlength = read_fitemlength();
-		cout << fitemlength << endl;
+		//cout << fitemlength << endl;
 		fitemlength -= (flength + UDP_HEAD_SIZE);
 		// write file to disk
 		fout.write(&recvBuffer[UDP_HEAD_SIZE + flength], fitemlength);
 
 		if (read_fileendbit()) {
 			fout.close();
-			clear_expectseq();
 		}
 	}
 }
@@ -321,8 +319,8 @@ int main() {
 		if (read_synbit()) {
 			cout << "retrieve a syn datagram to request connection..!" << endl;
 			fill_ackbit();
-			fill_udphead(UDP_HEAD_SIZE);
 			fill_seq(0);
+			fill_udphead(UDP_HEAD_SIZE);
 			sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
 			memset(sendBuffer, 0, sizeof(sendBuffer));
 			continue;
@@ -338,10 +336,16 @@ int main() {
 
 		// send a ACK datagram
 		fill_ackbit();
-		fill_udphead(UDP_HEAD_SIZE);
 		fill_seq(expect_seq - 1); // fill the ACK datagram's seq for GBN
+		fill_udphead(UDP_HEAD_SIZE);
 		sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
 		memset(sendBuffer, 0, sizeof(sendBuffer));
+
+		// if the file transmission finish, clear the seq status
+		if (read_fileendbit()) {
+			clear_expectseq();
+			cout << "receive successful..!" << endl;
+		}
 	}
 
 	closesocket(ser_socket);

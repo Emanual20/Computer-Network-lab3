@@ -24,6 +24,7 @@ const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
 const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
 const int MAX_SEQ = 0x10000; // the valid seq shall keep in
+const int DEFAULT_WINDOW_SIZE = 5;
 
 // server ip and port number
 char SERVER_IP[] = "192.168.43.180";
@@ -49,7 +50,7 @@ time_t t_start, t_end;
 int u_rto;
 
 // params for GBN
-u_short nextseqnum = 1, base = 1, WINDOW_SIZE = 5;
+u_short nextseqnum = 1, base = 1, WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
 vector<string> dg_vec;
 bool is_timeout = 0;
 HANDLE timer_handle;
@@ -348,8 +349,20 @@ int main() {
 
 	// set the timer's RTO for rdt3.0
 	// note: the timeval type used in setsocketopt will be read as milliseconds
-	cout << "please input the timer's RTO (the unit is ms):" << endl;
+	cout << "please input the timer's RTO (the unit is ms, at least will be 200ms):" << endl;
 	cin >> u_rto;
+
+	// set the windowsize for GBN
+	// note: if GBN's windowsize = 1, it will become stop-wait rdt3.0
+	cout << "please input your GBN's windowsize(it must > 0):" << endl;
+	int windowsize;
+	cin >> windowsize;
+	if (windowsize > 0) {
+		WINDOW_SIZE = windowsize;
+	}
+	else {
+		WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
+	}
 
 	// load libs
 	WORD wVersionRequested = MAKEWORD(2, 0);
@@ -365,12 +378,6 @@ int main() {
 		cout << "failed to create a new client socket.." << endl;
 	}
 	else cout << "create a new client socket successfully.." << endl;
-
-	//// set socket RTO for rdt3.0
-	//if (setsockopt(cli_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == -1) {
-	//	cout << "set RTO failed..!" << endl;
-	//}
-	//else cout << "set RTO successfully..!" << endl;
 
 	// bind serveraddr to the datagram socket
 	serveraddr.sin_family = AF_INET;
@@ -391,8 +398,8 @@ int main() {
 	string option;
 	while (1) {
 		cout << endl << "PLEASE INPUT YOUR OPTION:" << endl;
-		cout << "text;<text info>  file;<file path>  exit;" << endl;
-		cout << "for example, text;hello ,  file;1.jpg " << endl << endl;
+		cout << "text;<text info>  file;<file path>  exit; reset;" << endl;
+		cout << "for example, text;hello ,  file;1.jpg , reset;" << endl << endl;
 
 		cin >> option;
 		if (option.substr(0, 4) == "text") {
@@ -498,17 +505,17 @@ int main() {
 
 			// open sub-thread to recvfrom ack
 			recvfm_handle = CreateThread(NULL, NULL, handlerACK, LPVOID(cli_socket), 0, 0);
-			cout << dg_vec.size() << endl;
 
 			//break;//NOTE;!!
 
 			while (1) {
+				// if window is available, transmission package which seqnum is var<nextseqnum>
 				if (nextseqnum < base + WINDOW_SIZE && nextseqnum <= send_times) {
 					for (int j = 0; j < dg_vec[nextseqnum].length(); j++) {
 						sendBuffer[j] = dg_vec[nextseqnum][j];
 					}
 					fill_seq(nextseqnum);
-					cout << nextseqnum << " " << read_fpathlength(sendBuffer) << endl;
+					//cout << nextseqnum << " " << read_fpathlength(sendBuffer) << endl;
 					sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 					memset(sendBuffer, 0, sizeof(sendBuffer));
 					if (base == nextseqnum) {
@@ -518,9 +525,11 @@ int main() {
 				}
 				else {
 					cout << "nextseqnum beyond the window, will try later.." << endl;
+					// NOTE: later will be annotation
 					Sleep(300);
 				}
 
+				// if timeout, you should restart timer and retranmission all the datagrams between var<base> and var<nextseqnum>
 				if (is_timeout) {
 					// restart timer
 					TerminateThread(timer_handle, 0);
@@ -536,6 +545,9 @@ int main() {
 					}
 				}
 
+				cout << "base: " << base << " ;nextseqnum: " << nextseqnum << " " << endl;
+
+				// send_times == base - 1 means finish datagrams transmission
 				if (send_times == base - 1) {
 					clear_status();
 					TerminateThread(recvfm_handle, 0);
@@ -549,6 +561,37 @@ int main() {
 			CloseHandle(recvfm_handle);
 			TerminateThread(timer_handle, 0);
 			CloseHandle(timer_handle);
+		}
+		else if (option.substr(0, 5) == "reset") {
+			cout << "choose your option:" << endl;
+			cout << "1 for RTO; 2 for WINDOW_SIZE;" << endl;
+			int opt;
+			cin >> opt;
+			switch (opt) {
+			case 1: {
+				// set the timer's RTO for rdt3.0
+				// note: the timeval type used in setsocketopt will be read as milliseconds
+				cout << "please input the timer's RTO (the unit is ms):" << endl;
+				cin >> u_rto;
+				continue;
+			}
+			case 2: {
+				cout << "please input your GBN's windowsize(it must > 0):" << endl;
+				int windowsize;
+				cin >> windowsize;
+				if (windowsize > 0) {
+					WINDOW_SIZE = windowsize;
+				}
+				else {
+					WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
+				}
+				continue;
+			}
+			default: {
+				cout << "invalid option..please check..!" << endl;
+				continue;
+			}
+			}
 		}
 		else if (option.substr(0, 4) == "exit") {
 			break;
