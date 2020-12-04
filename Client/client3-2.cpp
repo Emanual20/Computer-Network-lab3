@@ -53,6 +53,7 @@ u_short nextseqnum = 1, base = 1, WINDOW_SIZE = 5;
 vector<string> dg_vec;
 bool is_timeout = 0;
 HANDLE timer_handle;
+HANDLE recvfm_handle;
 
 // for debug
 void mydebug() {
@@ -84,6 +85,7 @@ bool is_ipvalid(string ip) {
 		else if (ip[i] == '.') {
 			dot_cnt++;
 			if (!(0 <= res && res <= 255)) return false;
+			res = 0;
 		}
 		else return false;
 	}
@@ -220,7 +222,7 @@ int read_fitemlength() {
 bool is_corrupt() {
 	int l = read_fitemlength();
 	u_short now_cksum = cksum((u_short*)&sendBuffer[0], l / 2);
-	cout << now_cksum << endl;
+	//cout << now_cksum << endl;
 	return now_cksum != 0xffff;
 }
 
@@ -237,6 +239,13 @@ u_short read_seq() {
 	u_short ret = 0;
 	ret += (((unsigned short)recvBuffer[8]) % 0x100) * 256;
 	ret += ((unsigned short)recvBuffer[9] % 0x100);
+	return ret;
+}
+
+int read_fpathlength(char* buffer_ptr) {
+	int ret = 0;
+	ret += ((unsigned int)buffer_ptr[12]) * 256;
+	ret += (unsigned int)buffer_ptr[13];
 	return ret;
 }
 
@@ -437,6 +446,7 @@ int main() {
 			cout << "for this file, we will send " << send_times << " times..!" << endl;
 
 			// save the datagrams
+			init_dgvec();
 			int tot_read_size = 0; // bytes have been read
 			int reserved_size = 0;
 			int this_written_size = 0;
@@ -476,15 +486,29 @@ int main() {
 				fill_filebit();
 
 				// push the datagram into dg_vec
-				string temp_str = sendBuffer;
+				string temp_str = "";
+				for (int j = 0; j < UDP_MAXSIZE; j++) {
+					temp_str += sendBuffer[j];
+				}
+				memset(sendBuffer, 0, sizeof(sendBuffer));
 				dg_vec.push_back(temp_str);
 			}
 			fin.close();
+			cout << "calc datagrams complete..!" << endl;
+
+			// open sub-thread to recvfrom ack
+			recvfm_handle = CreateThread(NULL, NULL, handlerACK, LPVOID(cli_socket), 0, 0);
+			cout << dg_vec.size() << endl;
+
+			//break;//NOTE;!!
 
 			while (1) {
-				if (nextseqnum < base + WINDOW_SIZE) {
-					strcpy(sendBuffer, dg_vec[nextseqnum].c_str());
+				if (nextseqnum < base + WINDOW_SIZE && nextseqnum <= send_times) {
+					for (int j = 0; j < dg_vec[nextseqnum].length(); j++) {
+						sendBuffer[j] = dg_vec[nextseqnum][j];
+					}
 					fill_seq(nextseqnum);
+					cout << nextseqnum << " " << read_fpathlength(sendBuffer) << endl;
 					sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 					memset(sendBuffer, 0, sizeof(sendBuffer));
 					if (base == nextseqnum) {
@@ -494,13 +518,18 @@ int main() {
 				}
 				else {
 					cout << "nextseqnum beyond the window, will try later.." << endl;
-					Sleep(200);
+					Sleep(300);
 				}
 
 				if (is_timeout) {
+					// restart timer
+					TerminateThread(timer_handle, 0);
+					CloseHandle(timer_handle);
 					timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
 					for (int i = base; i < nextseqnum; i++) {
-						strcpy(sendBuffer, dg_vec[i].c_str());
+						for (int j = 0; j < dg_vec[i].length(); j++) {
+							sendBuffer[j] = dg_vec[i][j];
+						}
 						fill_seq(i);
 						sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 						memset(sendBuffer, 0, sizeof(sendBuffer));
@@ -509,8 +538,17 @@ int main() {
 
 				if (send_times == base - 1) {
 					clear_status();
+					TerminateThread(recvfm_handle, 0);
+					CloseHandle(recvfm_handle);
+					TerminateThread(timer_handle, 0);
+					CloseHandle(timer_handle);
+					break;
 				}
 			}
+			TerminateThread(recvfm_handle, 0);
+			CloseHandle(recvfm_handle);
+			TerminateThread(timer_handle, 0);
+			CloseHandle(timer_handle);
 		}
 		else if (option.substr(0, 4) == "exit") {
 			break;

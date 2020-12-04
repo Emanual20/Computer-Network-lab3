@@ -63,6 +63,7 @@ bool is_ipvalid(string ip) {
 		else if (ip[i] == '.') {
 			dot_cnt++;
 			if (!(0 <= res && res <= 255)) return false;
+			res = 0;
 		}
 		else return false;
 	}
@@ -183,7 +184,6 @@ int read_fitemlength() {
 bool is_corrupt() {
 	int l = read_fitemlength();
 	u_short now_cksum = cksum((u_short*)&sendBuffer[0], l / 2);
-	cout << now_cksum << endl;
 	return now_cksum != 0xffff;
 }
 
@@ -201,11 +201,6 @@ u_short read_seq() {
 	ret += (((unsigned short)recvBuffer[8]) % 0x100) * 256;
 	ret += ((unsigned short)recvBuffer[9] % 0x100);
 	return ret;
-}
-
-// via read_seq to judge if is_seq
-bool is_seq() {
-	return expect_seq == read_seq();
 }
 
 int read_fpathlength() {
@@ -232,6 +227,7 @@ void anal_datagram() {
 	// if the datagram's type is a file
 	if (read_filebit()) {
 		int flength = read_fpathlength();
+		cout << read_seq() << " " << flength << endl;
 		if (flength > 0) {
 			string file_name = "";
 			for (int i = 0; i < flength; i++) {
@@ -242,7 +238,7 @@ void anal_datagram() {
 		}
 
 		int fitemlength = read_fitemlength();
-		//cout << fitemlength << endl;
+		cout << fitemlength << endl;
 		fitemlength -= (flength + UDP_HEAD_SIZE);
 		// write file to disk
 		fout.write(&recvBuffer[UDP_HEAD_SIZE + flength], fitemlength);
@@ -335,6 +331,7 @@ int main() {
 		// check the seq, if the seq fits, analyze the datagram
 		cout << "expected seq: " << expect_seq << " ; received seq: " << read_seq() << endl;
 		if (read_seq() == expect_seq) {
+			cout << "accept" << endl;
 			plus_expectseq();
 			anal_datagram();
 		}
@@ -342,7 +339,7 @@ int main() {
 		// send a ACK datagram
 		fill_ackbit();
 		fill_udphead(UDP_HEAD_SIZE);
-		fill_seq(expect_seq); // fill the ACK datagram's seq for GBN
+		fill_seq(expect_seq - 1); // fill the ACK datagram's seq for GBN
 		sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
 		memset(sendBuffer, 0, sizeof(sendBuffer));
 	}
