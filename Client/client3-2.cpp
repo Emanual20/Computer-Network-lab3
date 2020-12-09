@@ -12,6 +12,7 @@
 #include<iomanip>
 #include<cmath>
 #include<vector>
+#include<mutex>
 #pragma comment(lib, "ws2_32.lib")
 using namespace std;
 
@@ -276,7 +277,7 @@ void clear_istimeout() {
 DWORD WINAPI myTimer(LPVOID param) {
 	int limit = (int)(LPVOID)param;
 	int st = clock(), et;
-
+	mutex mtx;
 	// clear the global is_timeout bit
 	clear_istimeout();
 	
@@ -284,7 +285,9 @@ DWORD WINAPI myTimer(LPVOID param) {
 		et = clock();
 		if (et - st > limit) {
 			cout << "time is up...!" << endl;
+			mtx.lock();
 			set_istimeout();
+			mtx.unlock();
 			return 1;
 		}
 		Sleep(200);
@@ -297,10 +300,13 @@ DWORD WINAPI myTimer(LPVOID param) {
 */
 DWORD WINAPI handlerACK(LPVOID param) {
 	SOCKET Cli_Socket = (SOCKET)(LPVOID)param;
+	mutex mtx;
 	while (1) {
 		recvfrom(Cli_Socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
 		if (!is_corrupt()) {
+			mtx.lock();
 			base = read_seq() + 1;
+			cout << "base received " << read_seq() << endl;
 			if (base == nextseqnum) {
 				// close timer
 				TerminateThread(timer_handle, 0);
@@ -315,9 +321,11 @@ DWORD WINAPI handlerACK(LPVOID param) {
 				// (2) start timer
 				timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
 			}
+			mtx.unlock();
 		}
 		else {
-			cout << "our ack datagram is corrupted..!" << endl;
+			cout << "our ack" <<read_seq()<<
+				" datagram is corrupted..!" << endl;
 		}
 	}
 }
@@ -446,6 +454,10 @@ int main() {
 				if (read_ackbit()) {
 					cout << "build connection successful..! we will begin to send your file..!" << endl;
 				}
+				else {
+					cout << "we didn't receive server's ack.. transmission interrupt..!" << endl;
+					continue;
+				}
 			}
 
 			// prepare to begin to send files
@@ -507,10 +519,12 @@ int main() {
 			recvfm_handle = CreateThread(NULL, NULL, handlerACK, LPVOID(cli_socket), 0, 0);
 
 			//break;//NOTE;!!
+			mutex mtx;
 
 			while (1) {
 				// if window is available, transmission package which seqnum is var<nextseqnum>
 				if (nextseqnum < base + WINDOW_SIZE && nextseqnum <= send_times) {
+					mtx.lock();
 					for (int j = 0; j < dg_vec[nextseqnum].length(); j++) {
 						sendBuffer[j] = dg_vec[nextseqnum][j];
 					}
@@ -522,6 +536,7 @@ int main() {
 						timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
 					}
 					nextseqnum++;
+					mtx.unlock();
 				}
 				else {
 					cout << "nextseqnum beyond the window, will try later.." << endl;
@@ -535,6 +550,7 @@ int main() {
 					TerminateThread(timer_handle, 0);
 					CloseHandle(timer_handle);
 					timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
+					mtx.lock();
 					for (int i = base; i < nextseqnum; i++) {
 						for (int j = 0; j < dg_vec[i].length(); j++) {
 							sendBuffer[j] = dg_vec[i][j];
@@ -543,17 +559,20 @@ int main() {
 						sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 						memset(sendBuffer, 0, sizeof(sendBuffer));
 					}
+					mtx.unlock();
 				}
 
 				cout << "base: " << base << " ;nextseqnum: " << nextseqnum << " " << endl;
 
 				// send_times == base - 1 means finish datagrams transmission
 				if (send_times == base - 1) {
+					mtx.lock();
 					clear_status();
 					TerminateThread(recvfm_handle, 0);
 					CloseHandle(recvfm_handle);
 					TerminateThread(timer_handle, 0);
 					CloseHandle(timer_handle);
+					mtx.unlock();
 					break;
 				}
 			}

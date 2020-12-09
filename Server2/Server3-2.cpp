@@ -328,7 +328,8 @@ int main() {
 
 		// check the seq, if the seq fits, analyze the datagram
 		cout << "expected seq: " << expect_seq << " ; received seq: " << read_seq() << endl;
-		if (read_seq() == expect_seq) {
+		bool is_seq_match = read_seq() == expect_seq;
+		if (is_seq_match) {
 			cout << "accept" << endl;
 			plus_expectseq();
 			anal_datagram();
@@ -343,7 +344,7 @@ int main() {
 		memset(sendBuffer, 0, sizeof(sendBuffer));
 
 		// if the file transmission finish, clear the seq status
-		if (read_fileendbit()) {
+		if (is_seq_match && read_fileendbit()) {
 			clear_expectseq();
 			cout << "receive successful..!" << endl;
 		}
