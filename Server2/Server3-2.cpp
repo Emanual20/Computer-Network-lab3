@@ -23,7 +23,7 @@ const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
 const int MAX_SEQ = 0x10000; // the valid seq shall keep in
 
-// server ip and port number
+// server ip and port number can be modified in "main"
 char SERVER_IP[] = "192.168.43.180";
 int SERVER_PORT = 30000;
 char CLIENT_IP[] = "192.168.43.180";
@@ -338,6 +338,7 @@ int main() {
 		fill_ackbit();
 		fill_seq(expect_seq - 1); // fill the ACK datagram's seq for GBN
 		fill_udphead(UDP_HEAD_SIZE);
+		cout << "send ACK" << expect_seq - 1 << endl;
 		sendto(ser_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&clientaddr, len_sockaddrin);
 		memset(sendBuffer, 0, sizeof(sendBuffer));
 

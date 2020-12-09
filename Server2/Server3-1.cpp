@@ -23,7 +23,7 @@ const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
 const int MAX_SEQ = 2; // the valid seq shall keep in
 
-// server ip and port number
+// server ip and port number can be modified in "main"
 char SERVER_IP[] = "192.168.43.180";
 int SERVER_PORT = 30000;
 char CLIENT_IP[] = "192.168.43.180";
@@ -181,7 +181,6 @@ int read_fitemlength() {
 bool is_corrupt() {
 	int l = read_fitemlength();
 	u_short now_cksum = cksum((u_short*)&sendBuffer[0], l / 2);
-	cout << now_cksum << endl;
 	return now_cksum != 0xffff;
 }
 
@@ -248,6 +247,7 @@ void anal_datagram() {
 		if (read_fileendbit()) {
 			fout.close();
 			clear_expectseq();
+			cout << "file receive successful..!" << endl;
 		}
 	}
 }
