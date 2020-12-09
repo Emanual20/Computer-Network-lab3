@@ -17,16 +17,19 @@ using namespace std;
 ofstream fdebug("debug.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
-const int BUFFER_SIZE = 0x8000;
-const int UDP_MAXSIZE = 0x8000; // udp max size = 32768 byte
+const int BUFFER_SIZE = 0x5d0;
+const int UDP_MAXSIZE = 0x5d0; // udp max size = 32768 byte
 const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
 const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
 const int MAX_SEQ = 2; // the valid seq shall keep in
 
 // server ip and port number
+char ROUTER_IP[] = "127.0.0.1";
+int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
-int SERVER_PORT = 30000;
+//int SERVER_PORT = 30000;
+int SERVER_PORT = ROUTER_PORT;
 char CLIENT_IP[] = "192.168.43.180";
 int CLIENT_PORT = 1425;
 char reserved_IP[] = "127.0.0.1";
@@ -44,7 +47,7 @@ int RECV_LEN = sizeof(recvBuffer);
 u_short sent_seq = 0;
 
 // timer for rdt3.0
-time_t t_start, t_end;
+int t_start, t_end;
 struct timeval timeout;
 
 // for debug
@@ -202,7 +205,6 @@ int read_fitemlength() {
 bool is_corrupt() {
 	int l = read_fitemlength();
 	u_short now_cksum = cksum((u_short*)&sendBuffer[0], l / 2);
-	cout << now_cksum << endl;
 	return now_cksum != 0xffff;
 }
 
@@ -304,15 +306,16 @@ int main() {
 
 		cin >> option;
 		if (option.substr(0, 4) == "text") {
-			string text_to_send = option.substr(5, option.length() - 5);
-			strcpy(&sendBuffer[UDP_HEAD_SIZE], text_to_send.c_str());
-			
-			// miss fill_udphead
-			sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
-			memset(sendBuffer, 0, sizeof(sendBuffer));
+			//string text_to_send = option.substr(5, option.length() - 5);
+			//strcpy(&sendBuffer[UDP_HEAD_SIZE], text_to_send.c_str());
+			//
+			//// miss fill_udphead
+			//sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
+			//memset(sendBuffer, 0, sizeof(sendBuffer));
 
-			recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
-			cout << recvBuffer << endl;
+			//recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
+			//cout << recvBuffer << endl;
+			cout << "sorry, this option is not available..!" << endl;
 		}
 		else if (option.substr(0, 4) == "file") {
 			string file_path = option.substr(5, option.length() - 5);
@@ -353,6 +356,7 @@ int main() {
 			int send_times = ceil((len * 1.0) / UDP_DATA_SIZE);
 			cout << "for this file, we will send " << send_times << " times..!" << endl;
 
+			int t_start = clock();
 			int tot_read_size = 0; // bytes have been read
 			int reserved_size = 0;
 			int this_written_size = 0;
@@ -447,6 +451,9 @@ int main() {
 					continue;
 				}
 			}
+			t_end = clock();
+			cout << "we send " << len << " (bytes), cost " << (t_end - t_start) << "(ms)";
+			cout << " throughout: " << len * 8 * 1.0 / (t_end - t_start) * CLOCKS_PER_SEC << " bps" << endl;
 			fin.close();
 		}
 		else if (option.substr(0, 4) == "exit") {

@@ -47,7 +47,7 @@ int RECV_LEN = sizeof(recvBuffer);
 u_short sent_seq = 1;
 
 // timer for rdt3.0
-time_t t_start, t_end;
+int t_start, t_end;
 int u_rto;
 
 // params for GBN
