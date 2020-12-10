@@ -52,6 +52,8 @@ u_short sent_seq = 1;
 // timer for rdt3.0
 int t_start, t_end;
 int u_rto;
+const int MINIMUM_RTO_TIME_LENGTH = 200;
+const int DEFAULT_RTO_TIME_LENGTH = 1500;
 
 // params for GBN
 u_short nextseqnum = 1, base = 1;
@@ -96,6 +98,14 @@ bool Is_Duplicate_ACK(int seq) {
 	return it != dup_cnt.end();
 }
 
+void setisdup() {
+	is_dup = true;
+}
+
+void clearisdup() {
+	is_dup = false;
+}
+
 // SlowStartHandlers
 void SlowStartDupACKHandler(int seq) {
 	if (!Is_Duplicate_ACK(seq)) {
@@ -133,6 +143,7 @@ void SlowStartTimeoutHandler() {
 	ssthresh = cwnd / 2;
 	cwnd = 1;
 	dup_cnt.clear();
+	is_dup = false;
 	// need retransmission in main func
 }
 
@@ -153,6 +164,7 @@ void QuickRecoveryNewACKHandler(int seq) {
 	}
 	cwnd = ssthresh;
 	dup_cnt.clear();
+	is_dup = false;
 	dup_cnt[seq] = 1;
 
 	Congest_Status = AVOID_CONGEST;
@@ -163,6 +175,7 @@ void QuickRecoveryTimeoutHandler() {
 	ssthresh = cwnd / 2;
 	cwnd = 1;
 	dup_cnt.clear();
+	is_dup = false;
 
 	Congest_Status = SLOW_START;
 	cout << "the congest status has changed from QUICK_RECOVERY to SLOW_START.." << endl;
@@ -192,8 +205,10 @@ void AvoidCongestNewACKHandler(int seq) {
 		return;
 	}
 	// NOTE: TODO: fix this part into cwnd = cwnd + MSS * MSS / CWND
-	cwnd = cwnd + 1 / cwnd;
+	double mss = 1;
+	cwnd = cwnd + mss * mss / cwnd;
 	dup_cnt.clear();
+	is_dup = false;
 	dup_cnt[seq] = 1;
 }
 
@@ -201,10 +216,66 @@ void AvoidCongestTimeoutHandler() {
 	ssthresh = cwnd / 2;
 	cwnd = 1;
 	dup_cnt.clear();
+	is_dup = false;
 
 	Congest_Status = SLOW_START;
 	cout << "the congest status has changed from AVOID_CONGEST to SLOW_START.." << endl;
 	// need retransmission in main func
+}
+
+// public handler function for outer use
+void DupACKHandler(int seq) {
+	switch (Congest_Status) {
+	case SLOW_START: {
+		return SlowStartDupACKHandler(seq);
+	}
+	case AVOID_CONGEST: {
+		return AvoidCongestDupACKHandler(seq);
+	}
+	case QUICK_RECOVERY: {
+		return QuickRecoveryDupACKHandler(seq);
+	}
+	default: {
+		cout << "default error in DupACKHandler..!" << endl;
+		return;
+	}
+	}
+}
+
+void NewACKHandler(int seq) {
+	switch (Congest_Status) {
+	case SLOW_START: {
+		return SlowStartNewACKHandler(seq);
+	}
+	case AVOID_CONGEST: {
+		return AvoidCongestNewACKHandler(seq);
+	}
+	case QUICK_RECOVERY: {
+		return QuickRecoveryNewACKHandler(seq);
+	}
+	default: {
+		cout << "default error in NewACKHandler..!" << endl;
+		return;
+	}
+	}
+}
+
+void TimeoutHandler() {
+	switch (Congest_Status) {
+	case SLOW_START: {
+		return SlowStartTimeoutHandler();
+	}
+	case AVOID_CONGEST: {
+		return AvoidCongestTimeoutHandler();
+	}
+	case QUICK_RECOVERY: {
+		return QuickRecoveryTimeoutHandler();
+	}
+	default: {
+		cout << "default error in TimeoutHandler..!" << endl;
+		return;
+	}
+	}
 }
 
 // to init dg_vec
@@ -238,6 +309,11 @@ bool is_ipvalid(string ip) {
 	}
 	if (!(0 <= res && res <= 255)) return false;
 	return dot_cnt == 3;
+}
+
+// to judge whether a rto user entered is valid
+bool is_rtovalid(int rto) {
+	return rto >= MINIMUM_RTO_TIME_LENGTH;
 }
 
 // fill the port bits with global var 'SERVER_PORT' & 'CLIENT_PORT'
@@ -450,8 +526,18 @@ DWORD WINAPI handlerACK(LPVOID param) {
 		recvfrom(Cli_Socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
 		if (!is_corrupt()) {
 			mtx.lock();
-			base = read_seq() + 1;
-			cout << "base received " << read_seq() << endl;
+			int received_ack = read_seq();
+			base = received_ack + 1;
+			cout << "base received " << received_ack << endl;
+
+			// reno handler
+			if (Is_Duplicate_ACK(received_ack)) {
+				DupACKHandler(received_ack);
+			}
+			else {
+				NewACKHandler(received_ack);
+			}
+
 			if (base == nextseqnum) {
 				// close timer
 				TerminateThread(timer_handle, 0);
@@ -478,44 +564,54 @@ DWORD WINAPI handlerACK(LPVOID param) {
 int main() {
 	// SET SERVER_IP & CLIENT_IP
 	string sip, cip;
-	cout << "please input your server IP, notvalid IP or input 0 will be set as 127.0.0.1 !" << endl;
-	cin >> sip;
-	if (is_ipvalid(sip)) {
-		cout << "server ip is set as: " << sip << endl;
-		strcpy(SERVER_IP, sip.c_str());
-	}
-	else {
-		cout << "server ip be set as: " << reserved_IP << endl;
-		strcpy(SERVER_IP, reserved_IP);
-	}
+	{
+		cout << "please input your server IP, notvalid IP or input 0 will be set as 127.0.0.1 !" << endl;
+		cin >> sip;
+		if (is_ipvalid(sip)) {
+			cout << "server ip is set as: " << sip << endl;
+			strcpy(SERVER_IP, sip.c_str());
+		}
+		else {
+			cout << "server ip be set as: " << reserved_IP << endl;
+			strcpy(SERVER_IP, reserved_IP);
+		}
 
-	cout << "please input your client IP, notvalid IP or input 0 will be set as 127.0.0.1 !" << endl;
-	cin >> cip;
-	if (is_ipvalid(cip)) {
-		cout << "client ip is set as: " << cip << endl;
-		strcpy(CLIENT_IP, cip.c_str());
-	}
-	else {
-		cout << "client ip be set as: " << reserved_IP << endl;
-		strcpy(CLIENT_IP, reserved_IP);
+		cout << "please input your client IP, notvalid IP or input 0 will be set as 127.0.0.1 !" << endl;
+		cin >> cip;
+		if (is_ipvalid(cip)) {
+			cout << "client ip is set as: " << cip << endl;
+			strcpy(CLIENT_IP, cip.c_str());
+		}
+		else {
+			cout << "client ip be set as: " << reserved_IP << endl;
+			strcpy(CLIENT_IP, reserved_IP);
+		}
 	}
 
 	// set the timer's RTO for rdt3.0
 	// note: the timeval type used in setsocketopt will be read as milliseconds
 	cout << "please input the timer's RTO (the unit is ms, at least will be 200ms):" << endl;
 	cin >> u_rto;
+	if (is_rtovalid) {
+		cout << "RTO is set as: " << u_rto << " ms" << endl;
+	}
+	else {
+		u_rto = DEFAULT_RTO_TIME_LENGTH;
+		cout << "input invalid.. RTO is set as DEFAULT_RTO_TIME_LENGTH: " << u_rto << endl;
+	}
 
 	// set the windowsize for GBN
 	// note: if GBN's windowsize = 1, it will become stop-wait rdt3.0
-	cout << "please input your GBN's windowsize(it must > 0):" << endl;
-	int windowsize;
-	cin >> windowsize;
-	if (windowsize > 0) {
-		WINDOW_SIZE = windowsize;
-	}
-	else {
-		WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
-	}
+	//cout << "please input your GBN's windowsize(it must > 0):" << endl;
+	//int windowsize;
+	//cin >> windowsize;
+	//if (windowsize > 0) {
+	//	WINDOW_SIZE = windowsize;
+	//}
+	//else {
+	//	WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
+	//}
+	cout << "WINDOW_SIZE will be set by renoinit() before a file send.." << endl;
 
 	// load libs
 	WORD wVersionRequested = MAKEWORD(2, 0);
@@ -661,17 +757,18 @@ int main() {
 			fin.close();
 			cout << "calc datagrams complete..!" << endl;
 
+			// init reno params and funcs
+			init_reno();
+
 			// open sub-thread to recvfrom ack
 			recvfm_handle = CreateThread(NULL, NULL, handlerACK, LPVOID(cli_socket), 0, 0);
-
-			//break;//NOTE;!!
 			mutex mtx;
-
 			int t_start = clock();
 			while (1) {
+
 				// if window is available, transmission package which seqnum is var<nextseqnum>
+				mtx.lock();
 				if (nextseqnum < base + WINDOW_SIZE && nextseqnum <= send_times) {
-					mtx.lock();
 					for (int j = 0; j < dg_vec[nextseqnum].length(); j++) {
 						sendBuffer[j] = dg_vec[nextseqnum][j];
 					}
@@ -686,18 +783,41 @@ int main() {
 					mtx.unlock();
 				}
 				else {
+					mtx.unlock();
 					cout << "nextseqnum beyond the window, will try later.." << endl;
 					// NOTE: later will be annotation
 					Sleep(300);
 				}
 
+				// NOTE: TODO: maybe need another thread
+				// if is_dup, retransmission all the packages which haven't received ACKs
+				if (is_dup) {
+					mtx.lock();
+					for (int i = base; i < nextseqnum; i++) {
+						for (int j = 0; j < dg_vec[i].length(); j++) {
+							sendBuffer[j] = dg_vec[i][j];
+						}
+						fill_seq(i);
+						sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
+						memset(sendBuffer, 0, sizeof(sendBuffer));
+					}
+					TerminateThread(timer_handle, 0);
+					CloseHandle(timer_handle);
+					clear_istimeout();
+					mtx.unlock();
+				}
+
 				// if timeout, you should restart timer and retranmission all the datagrams between var<base> and var<nextseqnum>
 				if (is_timeout) {
 					// restart timer
+					mtx.lock();
 					TerminateThread(timer_handle, 0);
 					CloseHandle(timer_handle);
 					timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
+					mtx.unlock();
 					mtx.lock();
+					// reno timeout handler
+					TimeoutHandler();
 					for (int i = base; i < nextseqnum; i++) {
 						for (int j = 0; j < dg_vec[i].length(); j++) {
 							sendBuffer[j] = dg_vec[i][j];
