@@ -31,8 +31,8 @@ const int DEFAULT_WINDOW_SIZE = 5;
 char ROUTER_IP[] = "127.0.0.1";
 int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
-//int SERVER_PORT = 30000;
-int SERVER_PORT = ROUTER_PORT;
+int SERVER_PORT = 30000;
+//int SERVER_PORT = ROUTER_PORT;
 char CLIENT_IP[] = "192.168.43.180";
 int CLIENT_PORT = 1425;
 char reserved_IP[] = "127.0.0.1";
@@ -69,12 +69,21 @@ enum CongestStatus {
 	AVOID_CONGEST,
 	QUICK_RECOVERY
 };
+string CongestStatus2String(CongestStatus sta) {
+	switch (sta) {
+	case SLOW_START: return "SLOW_START";
+	case AVOID_CONGEST: return "AVOID_CONGEST";
+	case QUICK_RECOVERY: return "QUICK_RECOVERY";
+	default: return "ERROR_STATUS";
+	}
+}
+
 CongestStatus Congest_Status = SLOW_START;
 double &cwnd = WINDOW_SIZE; // unit is MSS
 double ssthresh; // unit is MSS
 map<int, int> dup_cnt;
 const double RENOINIT_CGWD_SIZE = 1;
-const double RENOINIT_SSTHRESH_SIZE = 40;
+const double RENOINIT_SSTHRESH_SIZE = 20;
 const int RENO_MAXIMUM_DUMPLICATE_TIME = 3 + 1; // '+1' is cuz A new ACK will record its times as 1.
 bool is_dup = 0;
 
@@ -116,7 +125,7 @@ void SlowStartDupACKHandler(int seq) {
 	if (dup_cnt[seq] >= RENO_MAXIMUM_DUMPLICATE_TIME) {
 		ssthresh = cwnd / 2;
 		cwnd = ssthresh + 3;
-		is_dup = true; // need retransmission in the main func
+		setisdup(); // need retransmission in the main func
 
 		Congest_Status = QUICK_RECOVERY;
 		cout << "the congest status has changed from SLOW_START to QUICK_RECOVERY.." << endl;
@@ -124,13 +133,16 @@ void SlowStartDupACKHandler(int seq) {
 }
 
 void SlowStartNewACKHandler(int seq) {
+	mutex mtx;
 	if (Is_Duplicate_ACK(seq)) {
 		cout << "seq " << seq << " is not a new ACK! ABORT!" << endl;
 		return;
 	}
 	// if accept an new ACK, cwnd = cwnd + MSS
+
 	cwnd = cwnd + 1;
 	dup_cnt.clear();
+	clearisdup();
 	dup_cnt[seq] = 1;
 
 	if (cwnd >= ssthresh) {
@@ -143,7 +155,7 @@ void SlowStartTimeoutHandler() {
 	ssthresh = cwnd / 2;
 	cwnd = 1;
 	dup_cnt.clear();
-	is_dup = false;
+	clearisdup();
 	// need retransmission in main func
 }
 
@@ -164,7 +176,7 @@ void QuickRecoveryNewACKHandler(int seq) {
 	}
 	cwnd = ssthresh;
 	dup_cnt.clear();
-	is_dup = false;
+	clearisdup();
 	dup_cnt[seq] = 1;
 
 	Congest_Status = AVOID_CONGEST;
@@ -175,7 +187,7 @@ void QuickRecoveryTimeoutHandler() {
 	ssthresh = cwnd / 2;
 	cwnd = 1;
 	dup_cnt.clear();
-	is_dup = false;
+	clearisdup();
 
 	Congest_Status = SLOW_START;
 	cout << "the congest status has changed from QUICK_RECOVERY to SLOW_START.." << endl;
@@ -192,6 +204,7 @@ void AvoidCongestDupACKHandler(int seq) {
 	if (dup_cnt[seq] >= RENO_MAXIMUM_DUMPLICATE_TIME) {
 		ssthresh = cwnd / 2;
 		cwnd = ssthresh + 3;
+		setisdup(); // need retransmission in the main func
 
 		Congest_Status = QUICK_RECOVERY;
 		cout << "the congest status has changed from AVOID_CONGEST to QUICK_RECOVERY.." << endl;
@@ -208,7 +221,7 @@ void AvoidCongestNewACKHandler(int seq) {
 	double mss = 1;
 	cwnd = cwnd + mss * mss / cwnd;
 	dup_cnt.clear();
-	is_dup = false;
+	clearisdup();
 	dup_cnt[seq] = 1;
 }
 
@@ -216,7 +229,7 @@ void AvoidCongestTimeoutHandler() {
 	ssthresh = cwnd / 2;
 	cwnd = 1;
 	dup_cnt.clear();
-	is_dup = false;
+	clearisdup();
 
 	Congest_Status = SLOW_START;
 	cout << "the congest status has changed from AVOID_CONGEST to SLOW_START.." << endl;
@@ -766,6 +779,26 @@ int main() {
 			int t_start = clock();
 			while (1) {
 
+				// NOTE: TODO: maybe need another thread
+				// if is_dup, retransmission all the packages which haven't received ACKs
+				mtx.lock();
+				if (is_dup) {
+					cout << "IS DUPLICATE..!" << endl;
+					for (int i = base; i < nextseqnum; i++) {
+						for (int j = 0; j < dg_vec[i].length(); j++) {
+							sendBuffer[j] = dg_vec[i][j];
+						}
+						fill_seq(i);
+						sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
+						memset(sendBuffer, 0, sizeof(sendBuffer));
+					}
+					//TerminateThread(timer_handle, 0);
+					//CloseHandle(timer_handle);
+					//clear_istimeout();
+					Sleep(200);
+				}
+				mtx.unlock();
+
 				// if window is available, transmission package which seqnum is var<nextseqnum>
 				mtx.lock();
 				if (nextseqnum < base + WINDOW_SIZE && nextseqnum <= send_times) {
@@ -787,24 +820,6 @@ int main() {
 					cout << "nextseqnum beyond the window, will try later.." << endl;
 					// NOTE: later will be annotation
 					Sleep(300);
-				}
-
-				// NOTE: TODO: maybe need another thread
-				// if is_dup, retransmission all the packages which haven't received ACKs
-				if (is_dup) {
-					mtx.lock();
-					for (int i = base; i < nextseqnum; i++) {
-						for (int j = 0; j < dg_vec[i].length(); j++) {
-							sendBuffer[j] = dg_vec[i][j];
-						}
-						fill_seq(i);
-						sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
-						memset(sendBuffer, 0, sizeof(sendBuffer));
-					}
-					TerminateThread(timer_handle, 0);
-					CloseHandle(timer_handle);
-					clear_istimeout();
-					mtx.unlock();
 				}
 
 				// if timeout, you should restart timer and retranmission all the datagrams between var<base> and var<nextseqnum>
@@ -830,7 +845,12 @@ int main() {
 				}
 
 				mtx.lock();
-				cout << "base: " << base << " ;nextseqnum: " << nextseqnum << " " << endl;
+				{
+					cout << "base: " << base << " ;nextseqnum: " << nextseqnum << "; ";
+					cout << "ssthresh: " << ssthresh << "; WINDOW_SIZE:" << cwnd << "; ";
+					cout << "IS_TIMEOUT: " << is_timeout << "; STATUS:" << CongestStatus2String(Congest_Status) << ";";
+					cout << endl;
+				}
 				mtx.unlock();
 
 				// send_times == base - 1 means finish datagrams transmission

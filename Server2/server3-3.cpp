@@ -13,7 +13,7 @@
 #pragma comment(lib, "ws2_32.lib")
 using namespace std;
 
-//ofstream fdebug("debug3-2.txt");
+//ofstream fdebug("debug3-3.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
 const int BUFFER_SIZE = 0x5d0;
@@ -29,8 +29,8 @@ int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
 int SERVER_PORT = 30000;
 char CLIENT_IP[] = "192.168.43.180";
-//int CLIENT_PORT = 1425;
-int CLIENT_PORT = ROUTER_PORT;
+int CLIENT_PORT = 1425;
+//int CLIENT_PORT = ROUTER_PORT;
 char reserved_IP[] = "127.0.0.1";
 
 sockaddr_in serveraddr, clientaddr;
