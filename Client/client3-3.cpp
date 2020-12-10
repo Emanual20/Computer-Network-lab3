@@ -1,5 +1,5 @@
 //Author: Emanual20
-//Date: 3/12/2020
+//Date: 10/12/2020
 #include<iostream>
 #include<fstream>
 #include<ctime>
@@ -16,7 +16,7 @@
 #pragma comment(lib, "ws2_32.lib")
 using namespace std;
 
-//ofstream fdebug("debug3-2.txt");
+//ofstream fdebug("debug3-3.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
 const int BUFFER_SIZE = 0x5d0;
@@ -54,16 +54,158 @@ int t_start, t_end;
 int u_rto;
 
 // params for GBN
-u_short nextseqnum = 1, base = 1, WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
+u_short nextseqnum = 1, base = 1;
+double WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
 vector<string> dg_vec;
 bool is_timeout = 0;
 HANDLE timer_handle;
 HANDLE recvfm_handle;
 
+// params for RENO
+enum CongestStatus {
+	SLOW_START,
+	AVOID_CONGEST,
+	QUICK_RECOVERY
+};
+CongestStatus Congest_Status = SLOW_START;
+double &cwnd = WINDOW_SIZE; // unit is MSS
+double ssthresh; // unit is MSS
+map<int, int> dup_cnt;
+const double RENOINIT_CGWD_SIZE = 1;
+const double RENOINIT_SSTHRESH_SIZE = 40;
+const int RENO_MAXIMUM_DUMPLICATE_TIME = 3 + 1; // '+1' is cuz A new ACK will record its times as 1.
+bool is_dup = 0;
+
 // for debug
 //void mydebug() {
 //	fdebug.write(sendBuffer, BUFFER_SIZE);
 //}
+
+// to init_reno
+void init_reno() {
+	Congest_Status = SLOW_START;
+	cwnd = RENOINIT_CGWD_SIZE;
+	ssthresh = RENOINIT_SSTHRESH_SIZE;
+	dup_cnt.clear();
+	is_dup = false;
+}
+
+// to judge if an ACK is a dumplicate ACK
+bool Is_Duplicate_ACK(int seq) {
+	map<int, int>::iterator it = dup_cnt.find(seq);
+	return it != dup_cnt.end();
+}
+
+// SlowStartHandlers
+void SlowStartDupACKHandler(int seq) {
+	if (!Is_Duplicate_ACK(seq)) {
+		cout << "seq " << seq << " is not a dup ACK! ABORT!" << endl;
+		return;
+	}
+	dup_cnt[seq]++;
+	if (dup_cnt[seq] >= RENO_MAXIMUM_DUMPLICATE_TIME) {
+		ssthresh = cwnd / 2;
+		cwnd = ssthresh + 3;
+		is_dup = true; // need retransmission in the main func
+
+		Congest_Status = QUICK_RECOVERY;
+		cout << "the congest status has changed from SLOW_START to QUICK_RECOVERY.." << endl;
+	}
+}
+
+void SlowStartNewACKHandler(int seq) {
+	if (Is_Duplicate_ACK(seq)) {
+		cout << "seq " << seq << " is not a new ACK! ABORT!" << endl;
+		return;
+	}
+	// if accept an new ACK, cwnd = cwnd + MSS
+	cwnd = cwnd + 1;
+	dup_cnt.clear();
+	dup_cnt[seq] = 1;
+
+	if (cwnd >= ssthresh) {
+		Congest_Status = AVOID_CONGEST;
+		cout << "the congest status has changed from SLOW_START to AVOID_CONGEST.." << endl;
+	}
+}
+
+void SlowStartTimeoutHandler() {
+	ssthresh = cwnd / 2;
+	cwnd = 1;
+	dup_cnt.clear();
+	// need retransmission in main func
+}
+
+// QuickRecoveryHandlers
+void QuickRecoveryDupACKHandler(int seq) {
+	if (!Is_Duplicate_ACK(seq)) {
+		cout << "seq " << seq << " is not a dup ACK! ABORT!" << endl;
+		return;
+	}
+	cwnd = cwnd + 1;
+	// need retransmission in main func
+}
+
+void QuickRecoveryNewACKHandler(int seq) {
+	if (Is_Duplicate_ACK(seq)) {
+		cout << "seq " << seq << " is not a new ACK! ABORT!" << endl;
+		return;
+	}
+	cwnd = ssthresh;
+	dup_cnt.clear();
+	dup_cnt[seq] = 1;
+
+	Congest_Status = AVOID_CONGEST;
+	cout << "the congest status has changed from QUICK_RECOVERY to AVOID_CONGEST.." << endl;
+}
+
+void QuickRecoveryTimeoutHandler() {
+	ssthresh = cwnd / 2;
+	cwnd = 1;
+	dup_cnt.clear();
+
+	Congest_Status = SLOW_START;
+	cout << "the congest status has changed from QUICK_RECOVERY to SLOW_START.." << endl;
+	// need retransmission in main func
+}
+
+// AvoidCongestHandlers
+void AvoidCongestDupACKHandler(int seq) {
+	if (!Is_Duplicate_ACK(seq)) {
+		cout << "seq " << seq << " is not a dup ACK! ABORT!" << endl;
+		return;
+	}
+	dup_cnt[seq]++;
+	if (dup_cnt[seq] >= RENO_MAXIMUM_DUMPLICATE_TIME) {
+		ssthresh = cwnd / 2;
+		cwnd = ssthresh + 3;
+
+		Congest_Status = QUICK_RECOVERY;
+		cout << "the congest status has changed from AVOID_CONGEST to QUICK_RECOVERY.." << endl;
+	}
+	// need retransmission in main func
+}
+
+void AvoidCongestNewACKHandler(int seq) {
+	if (Is_Duplicate_ACK(seq)) {
+		cout << "seq " << seq << " is not a new ACK! ABORT!" << endl;
+		return;
+	}
+	// NOTE: TODO: fix this part into cwnd = cwnd + MSS * MSS / CWND
+	cwnd = cwnd + 1 / cwnd;
+	dup_cnt.clear();
+	dup_cnt[seq] = 1;
+}
+
+void AvoidCongestTimeoutHandler() {
+	ssthresh = cwnd / 2;
+	cwnd = 1;
+	dup_cnt.clear();
+
+	Congest_Status = SLOW_START;
+	cout << "the congest status has changed from AVOID_CONGEST to SLOW_START.." << endl;
+	// need retransmission in main func
+}
 
 // to init dg_vec
 void init_dgvec() {
@@ -283,7 +425,7 @@ DWORD WINAPI myTimer(LPVOID param) {
 	mutex mtx;
 	// clear the global is_timeout bit
 	clear_istimeout();
-	
+
 	while (1) {
 		et = clock();
 		if (et - st > limit) {
@@ -327,7 +469,7 @@ DWORD WINAPI handlerACK(LPVOID param) {
 			mtx.unlock();
 		}
 		else {
-			cout << "our ack" <<read_seq()<<
+			cout << "our ack" << read_seq() <<
 				" datagram is corrupted..!" << endl;
 		}
 	}
