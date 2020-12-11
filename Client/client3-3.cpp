@@ -879,7 +879,7 @@ int main() {
 		}
 		else if (option.substr(0, 5) == "reset") {
 			cout << "choose your option:" << endl;
-			cout << "1 for RTO; 2 for WINDOW_SIZE;" << endl;
+			cout << "1 for RTO; cuz RENO's WINDOW SIZE is changing automatically..!" << endl;
 			int opt;
 			cin >> opt;
 			switch (opt) {
@@ -888,18 +888,6 @@ int main() {
 				// note: the timeval type used in setsocketopt will be read as milliseconds
 				cout << "please input the timer's RTO (the unit is ms):" << endl;
 				cin >> u_rto;
-				continue;
-			}
-			case 2: {
-				cout << "please input your GBN's windowsize(it must > 0):" << endl;
-				int windowsize;
-				cin >> windowsize;
-				if (windowsize > 0) {
-					WINDOW_SIZE = windowsize;
-				}
-				else {
-					WINDOW_SIZE = DEFAULT_WINDOW_SIZE;
-				}
 				continue;
 			}
 			default: {
