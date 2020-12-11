@@ -31,8 +31,8 @@ const int DEFAULT_WINDOW_SIZE = 5;
 char ROUTER_IP[] = "127.0.0.1";
 int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
-//int SERVER_PORT = 30000;
-int SERVER_PORT = ROUTER_PORT;
+int SERVER_PORT = 30000;
+//int SERVER_PORT = ROUTER_PORT;
 char CLIENT_IP[] = "192.168.43.180";
 int CLIENT_PORT = 1425;
 char reserved_IP[] = "127.0.0.1";
@@ -327,8 +327,9 @@ DWORD WINAPI handlerACK(LPVOID param) {
 			mtx.unlock();
 		}
 		else {
-			cout << "our ack" <<read_seq()<<
-				" datagram is corrupted..!" << endl;
+			/*cout << "our ack" <<read_seq()<<
+				" datagram is corrupted..!" << endl;*/
+			;
 		}
 	}
 }
@@ -546,7 +547,7 @@ int main() {
 				else {
 					cout << "nextseqnum beyond the window, will try later.." << endl;
 					// NOTE: later will be annotation
-					Sleep(300);
+					Sleep(200);
 				}
 
 				// if timeout, you should restart timer and retranmission all the datagrams between var<base> and var<nextseqnum>

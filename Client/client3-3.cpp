@@ -31,8 +31,8 @@ const int DEFAULT_WINDOW_SIZE = 5;
 char ROUTER_IP[] = "127.0.0.1";
 int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
-int SERVER_PORT = 30000;
-//int SERVER_PORT = ROUTER_PORT;
+//int SERVER_PORT = 30000;
+int SERVER_PORT = ROUTER_PORT;
 char CLIENT_IP[] = "192.168.43.180";
 int CLIENT_PORT = 1425;
 char reserved_IP[] = "127.0.0.1";
@@ -113,6 +113,14 @@ void setisdup() {
 
 void clearisdup() {
 	is_dup = false;
+}
+
+void set_istimeout() {
+	is_timeout = 1;
+}
+
+void clear_istimeout() {
+	is_timeout = 0;
 }
 
 // SlowStartHandlers
@@ -301,6 +309,7 @@ void init_dgvec() {
 // clear all the status
 void clear_status() {
 	init_dgvec();
+	clear_istimeout(); // NOTE: may result in some problems
 	nextseqnum = base = 1;
 }
 
@@ -495,14 +504,6 @@ int read_ackbit() {
 
 int read_filebit() {
 	return recvBuffer[15] & 0x1;
-}
-
-void set_istimeout() {
-	is_timeout = 1;
-}
-
-void clear_istimeout() {
-	is_timeout = 0;
 }
 
 /*
@@ -792,10 +793,10 @@ int main() {
 						sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 						memset(sendBuffer, 0, sizeof(sendBuffer));
 					}
+					clearisdup();
 					//TerminateThread(timer_handle, 0);
 					//CloseHandle(timer_handle);
-					//clear_istimeout();
-					Sleep(200);
+					Sleep(125);
 				}
 				mtx.unlock();
 
@@ -810,6 +811,7 @@ int main() {
 					sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 					memset(sendBuffer, 0, sizeof(sendBuffer));
 					if (base == nextseqnum) {
+						clear_istimeout();
 						timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
 					}
 					nextseqnum++;
@@ -828,6 +830,7 @@ int main() {
 					mtx.lock();
 					TerminateThread(timer_handle, 0);
 					CloseHandle(timer_handle);
+					clear_istimeout();
 					timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
 					mtx.unlock();
 					mtx.lock();
