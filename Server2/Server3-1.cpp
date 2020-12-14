@@ -29,8 +29,8 @@ int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
 int SERVER_PORT = 30000;
 char CLIENT_IP[] = "192.168.43.180";
-//int CLIENT_PORT = 1425;
-int CLIENT_PORT = ROUTER_PORT;
+int CLIENT_PORT = 1425;
+//int CLIENT_PORT = ROUTER_PORT;
 char reserved_IP[] = "127.0.0.1";
 
 sockaddr_in serveraddr, clientaddr;

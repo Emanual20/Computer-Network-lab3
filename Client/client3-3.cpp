@@ -19,8 +19,8 @@ using namespace std;
 //ofstream fdebug("debug3-3.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
-const int BUFFER_SIZE = 0x5d0;
-const int UDP_MAXSIZE = 0x5d0; // udp max size = 32768 byte
+const int BUFFER_SIZE = 0x3A90;
+const int UDP_MAXSIZE = 0x3A90; // udp max size = 32768 byte
 const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
 const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
@@ -576,6 +576,10 @@ DWORD WINAPI handlerACK(LPVOID param) {
 }
 
 int main() {
+	ios::sync_with_stdio(false);
+	cin.tie(0);
+	cout.tie(0);
+
 	// SET SERVER_IP & CLIENT_IP
 	string sip, cip;
 	{
