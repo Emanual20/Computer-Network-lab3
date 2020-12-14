@@ -87,11 +87,6 @@ const double RENOINIT_SSTHRESH_SIZE = 20;
 const int RENO_MAXIMUM_DUMPLICATE_TIME = 3 + 1; // '+1' is cuz A new ACK will record its times as 1.
 bool is_dup = 0;
 
-// for debug
-//void mydebug() {
-//	fdebug.write(sendBuffer, BUFFER_SIZE);
-//}
-
 // to init_reno
 void init_reno() {
 	Congest_Status = SLOW_START;
