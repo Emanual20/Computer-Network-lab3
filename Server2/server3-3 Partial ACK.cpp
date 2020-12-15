@@ -388,6 +388,7 @@ int main() {
 	// create a sendto thread
 	sender_handle = CreateThread(NULL, NULL, ACKsender, LPVOID(ser_socket), 0, 0);
 	// recv from in main thread
+	mutex mtx;
 	while (1) {
 		recvfrom(ser_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&clientaddr, &len_sockaddrin);
 
@@ -416,9 +417,11 @@ int main() {
 			cout << "accept" << endl;
 			plus_expectseq();
 
+			mtx.lock();
 			timer.clear_timeout();
 			t_start = clock();
 			ACKSendmanager.set_isneedtosend();
+			mtx.unlock();
 
 			anal_datagram();
 		}
@@ -428,8 +431,10 @@ int main() {
 			Sleep((SENDER_SEND_INTERVAL + SENDER_SLEEP_INTERVAL)*1.5);
 
 			clear_expectseq();
+			mtx.lock();
 			timer.clear_timeout();
 			ACKSendmanager.clear_isneedtosend();
+			mtx.unlock();
 			cout << "receive successful..!" << endl;
 		}
 	}
