@@ -17,8 +17,8 @@ using namespace std;
 ofstream fdebug("debug.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
-const int BUFFER_SIZE = 0x5d0;
-const int UDP_MAXSIZE = 0x5d0; // udp max size = 32768 byte
+const int BUFFER_SIZE = 0x3A90;
+const int UDP_MAXSIZE = 0x3A90; // udp max size = 32768 byte
 const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
 const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
@@ -28,8 +28,8 @@ const int MAX_SEQ = 2; // the valid seq shall keep in
 char ROUTER_IP[] = "127.0.0.1";
 int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
-int SERVER_PORT = 30000;
-//int SERVER_PORT = ROUTER_PORT;
+//int SERVER_PORT = 30000;
+int SERVER_PORT = ROUTER_PORT;
 char CLIENT_IP[] = "192.168.43.180";
 int CLIENT_PORT = 1425;
 char reserved_IP[] = "127.0.0.1";
@@ -50,10 +50,10 @@ u_short sent_seq = 0;
 int t_start, t_end;
 struct timeval timeout;
 
-// for debug
-void mydebug() {
-	fdebug.write(sendBuffer, BUFFER_SIZE);
-}
+// params for performance test
+typedef long long ll;
+ll BYTES_HAVE_SENT = 0;
+
 
 // to judge whether a ip user entered is valid 
 bool is_ipvalid(string ip) {
@@ -324,6 +324,7 @@ int main() {
 			// move the ifstream pointer to the end of the binary file
 			fin.seekg(0, ios::end);
 
+			BYTES_HAVE_SENT = 0;
 			int len = fin.tellg();
 			if (len <= 0) {
 				cout << "failed to open the file, please check..!" << endl;
@@ -395,6 +396,7 @@ int main() {
 				if (i == send_times - 1) fill_fileendbit();
 				fill_filebit();
 				sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
+				BYTES_HAVE_SENT += this_written_size;
 				memset(sendBuffer, 0, sizeof(sendBuffer));
 
 				// receive the server's ack/nak/seq
@@ -452,8 +454,8 @@ int main() {
 				}
 			}
 			t_end = clock();
-			cout << "we send " << len << " (bytes), cost " << (t_end - t_start) << "(ms)";
-			cout << " throughout: " << len * 8 * 1.0 / (t_end - t_start) * CLOCKS_PER_SEC << " bps" << endl;
+			cout << "we send " << BYTES_HAVE_SENT << " (bytes), cost " << (t_end - t_start) << "(ms)";
+			cout << " throughout: " << BYTES_HAVE_SENT * 8 * 1.0 / (t_end - t_start) * CLOCKS_PER_SEC << " bps" << endl;
 			fin.close();
 		}
 		else if (option.substr(0, 4) == "exit") {

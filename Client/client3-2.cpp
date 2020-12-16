@@ -19,8 +19,8 @@ using namespace std;
 //ofstream fdebug("debug3-2.txt");
 
 // Note: don't know why but BUFFER_SIZE can't be 0xffff
-const int BUFFER_SIZE = 0x5d0;
-const int UDP_MAXSIZE = 0x5d0; // udp max size = 32768 byte
+const int BUFFER_SIZE = 0x3A90;
+const int UDP_MAXSIZE = 0x3A90; // udp max size = 32768 byte
 const int UDP_HEAD_SIZE = 0x10; // my designed udp head size = 16 byte
 #define UDP_DATA_SIZE (UDP_MAXSIZE-UDP_HEAD_SIZE)
 const int RTO_TIME = 1000; // the unit of RTO_TIME is ms
@@ -31,8 +31,8 @@ const int DEFAULT_WINDOW_SIZE = 5;
 char ROUTER_IP[] = "127.0.0.1";
 int ROUTER_PORT = 14250;
 char SERVER_IP[] = "192.168.43.180";
-int SERVER_PORT = 30000;
-//int SERVER_PORT = ROUTER_PORT;
+//int SERVER_PORT = 30000;
+int SERVER_PORT = ROUTER_PORT;
 char CLIENT_IP[] = "192.168.43.180";
 int CLIENT_PORT = 1425;
 char reserved_IP[] = "127.0.0.1";
@@ -60,10 +60,9 @@ bool is_timeout = 0;
 HANDLE timer_handle;
 HANDLE recvfm_handle;
 
-// for debug
-//void mydebug() {
-//	fdebug.write(sendBuffer, BUFFER_SIZE);
-//}
+// params for performance test
+typedef long long ll;
+ll BYTES_HAVE_SENT = 0;
 
 // to init dg_vec
 void init_dgvec() {
@@ -526,6 +525,7 @@ int main() {
 			//break;//NOTE;!!
 			mutex mtx;
 
+			BYTES_HAVE_SENT = 0;
 			int t_start = clock();
 			while (1) {
 				// if window is available, transmission package which seqnum is var<nextseqnum>
@@ -536,6 +536,7 @@ int main() {
 					}
 					fill_seq(nextseqnum);
 					//cout << nextseqnum << " " << read_fpathlength(sendBuffer) << endl;
+					BYTES_HAVE_SENT += dg_vec[nextseqnum].length();
 					sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 					memset(sendBuffer, 0, sizeof(sendBuffer));
 					if (base == nextseqnum) {
@@ -547,21 +548,24 @@ int main() {
 				else {
 					cout << "nextseqnum beyond the window, will try later.." << endl;
 					// NOTE: later will be annotation
-					Sleep(200);
+					Sleep(60);
 				}
 
 				// if timeout, you should restart timer and retranmission all the datagrams between var<base> and var<nextseqnum>
 				if (is_timeout) {
 					// restart timer
+					mtx.lock();
 					TerminateThread(timer_handle, 0);
 					CloseHandle(timer_handle);
 					timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
+					mtx.unlock();
 					mtx.lock();
 					for (int i = base; i < nextseqnum; i++) {
 						for (int j = 0; j < dg_vec[i].length(); j++) {
 							sendBuffer[j] = dg_vec[i][j];
 						}
 						fill_seq(i);
+						BYTES_HAVE_SENT += dg_vec[i].length();
 						sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 						memset(sendBuffer, 0, sizeof(sendBuffer));
 					}
@@ -577,8 +581,8 @@ int main() {
 					mtx.lock();
 					int t_end = clock();
 					t_end = clock();
-					cout << "we send " << len << " (bytes), cost " << (t_end - t_start) << "(ms)";
-					cout << " throughout: " << len * 8 * 1.0 / (t_end - t_start) * CLOCKS_PER_SEC << " bps" << endl;
+					cout << "we send " << BYTES_HAVE_SENT << " (bytes), cost " << (t_end - t_start) << "(ms)";
+					cout << " throughout: " << BYTES_HAVE_SENT * 8 * 1.0 / (t_end - t_start) * CLOCKS_PER_SEC << " bps" << endl;
 					clear_status();
 					TerminateThread(recvfm_handle, 0);
 					CloseHandle(recvfm_handle);
