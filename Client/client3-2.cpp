@@ -63,6 +63,8 @@ HANDLE recvfm_handle;
 // params for performance test
 typedef long long ll;
 ll BYTES_HAVE_SENT = 0;
+ll timer_begin, timer_end;
+ll LIMIT_PARAM = 0x7fff;
 
 // to init dg_vec
 void init_dgvec() {
@@ -273,26 +275,34 @@ void clear_istimeout() {
 	is_timeout = 0;
 }
 
+void restart_timer() {
+	is_timeout = 0;
+	timer_begin = clock();
+	LIMIT_PARAM = 1;
+}
+
+void close_timer() {
+	is_timeout = 0;
+	LIMIT_PARAM = 0X7fff;
+}
+
 /*
   Create a timer to test RTO
 */
 DWORD WINAPI myTimer(LPVOID param) {
 	int limit = (int)(LPVOID)param;
-	int st = clock(), et;
+	timer_begin = clock();
 	mutex mtx;
-	// clear the global is_timeout bit
 	clear_istimeout();
-	
 	while (1) {
-		et = clock();
-		if (et - st > limit) {
+		timer_end = clock();
+		if (timer_end - timer_begin > limit * LIMIT_PARAM) {
 			cout << "time is up...!" << endl;
 			mtx.lock();
 			set_istimeout();
 			mtx.unlock();
-			return 1;
 		}
-		Sleep(200);
+		Sleep(limit / 10);
 	}
 	return 0;
 }
@@ -311,17 +321,11 @@ DWORD WINAPI handlerACK(LPVOID param) {
 			cout << "base received " << read_seq() << endl;
 			if (base == nextseqnum) {
 				// close timer
-				TerminateThread(timer_handle, 0);
-				CloseHandle(timer_handle);
+				close_timer();
 			}
 			else {
 				// restart timer!
-
-				// (1) close timer
-				TerminateThread(timer_handle, 0);
-				CloseHandle(timer_handle);
-				// (2) start timer
-				timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
+				restart_timer();
 			}
 			mtx.unlock();
 		}
@@ -405,6 +409,7 @@ int main() {
 	}
 	else cout << "bind success..!" << endl;
 
+	timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
 	// recvfrom & sendto
 	string option;
 	while (1) {
@@ -414,15 +419,6 @@ int main() {
 
 		cin >> option;
 		if (option.substr(0, 4) == "text") {
-			//string text_to_send = option.substr(5, option.length() - 5);
-			//strcpy(&sendBuffer[UDP_HEAD_SIZE], text_to_send.c_str());
-
-			//// miss fill_udphead
-			//sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
-			//memset(sendBuffer, 0, sizeof(sendBuffer));
-
-			//recvfrom(cli_socket, recvBuffer, RECV_LEN, 0, (sockaddr*)&serveraddr, &len_sockaddrin);
-			//cout << recvBuffer << endl;
 			cout << "sorry, this option is not available..!" << endl;
 		}
 		else if (option.substr(0, 4) == "file") {
@@ -540,7 +536,7 @@ int main() {
 					sendto(cli_socket, sendBuffer, SEND_LEN, 0, (sockaddr*)&serveraddr, len_sockaddrin);
 					memset(sendBuffer, 0, sizeof(sendBuffer));
 					if (base == nextseqnum) {
-						timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
+						restart_timer();
 					}
 					nextseqnum++;
 					mtx.unlock();
@@ -548,16 +544,14 @@ int main() {
 				else {
 					cout << "nextseqnum beyond the window, will try later.." << endl;
 					// NOTE: later will be annotation
-					Sleep(60);
+					Sleep(u_rto / 10);
 				}
 
 				// if timeout, you should restart timer and retranmission all the datagrams between var<base> and var<nextseqnum>
 				if (is_timeout) {
 					// restart timer
 					mtx.lock();
-					TerminateThread(timer_handle, 0);
-					CloseHandle(timer_handle);
-					timer_handle = CreateThread(NULL, NULL, myTimer, LPVOID(u_rto), 0, 0);
+					restart_timer();
 					mtx.unlock();
 					mtx.lock();
 					for (int i = base; i < nextseqnum; i++) {
@@ -586,16 +580,14 @@ int main() {
 					clear_status();
 					TerminateThread(recvfm_handle, 0);
 					CloseHandle(recvfm_handle);
-					TerminateThread(timer_handle, 0);
-					CloseHandle(timer_handle);
+					close_timer();
 					mtx.unlock();
 					break;
 				}
 			}
 			TerminateThread(recvfm_handle, 0);
 			CloseHandle(recvfm_handle);
-			TerminateThread(timer_handle, 0);
-			CloseHandle(timer_handle);
+			close_timer();
 		}
 		else if (option.substr(0, 5) == "reset") {
 			cout << "choose your option:" << endl;
@@ -633,6 +625,7 @@ int main() {
 		}
 	}
 
+	CloseHandle(timer_handle);
 	// close the cli_socket
 	closesocket(cli_socket);
 	WSACleanup();
